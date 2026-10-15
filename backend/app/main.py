@@ -46,6 +46,8 @@ async def lifespan(_: FastAPI):
     s = get_settings()
     if s.is_production and "fis_dev_password" in s.database_url:
         raise RuntimeError("Refusing to start in production with the development database password. Set DATABASE_URL.")
+    if s.is_production and s.is_sqlite:
+        raise RuntimeError("SQLite is for local single-user use only. Use PostgreSQL (DATABASE_URL) in production.")
 
     async def periodic():
         while True:
@@ -124,7 +126,7 @@ def health():
     except Exception:
         db_ok = False
     return {"status": "ok" if db_ok else "degraded", "version": VERSION, "environment": get_settings().fis_env,
-            "database": "ok" if db_ok else "unreachable"}
+            "database": "ok" if db_ok else "unreachable", "database_engine": "sqlite" if get_settings().is_sqlite else "postgresql"}
 
 
 @app.get("/api/ai/status", dependencies=[Depends(current_user)])

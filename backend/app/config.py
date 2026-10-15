@@ -35,6 +35,27 @@ class Settings(BaseSettings):
     fis_ai_model: str = "claude-sonnet-5-5"
 
     @property
+    def resolved_database_url(self) -> str:
+        """DATABASE_URL with relative SQLite paths anchored to the backend folder.
+
+        SQLite (e.g. sqlite:///storage/finance_studio.db) is the one-click local mode for a
+        single user on one computer; PostgreSQL is required for anything shared or deployed.
+        """
+        url = self.database_url
+        prefix = "sqlite:///"
+        if url.startswith(prefix) and not url.startswith(prefix + "/") and ":memory:" not in url:
+            path = Path(url[len(prefix):])
+            if not path.is_absolute():
+                path = BACKEND_DIR / path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            url = prefix + path.as_posix()
+        return url
+
+    @property
+    def is_sqlite(self) -> bool:
+        return self.database_url.startswith("sqlite")
+
+    @property
     def is_production(self) -> bool:
         return self.fis_env.lower() == "production"
 

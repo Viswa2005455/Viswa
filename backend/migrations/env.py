@@ -26,7 +26,7 @@ target_metadata = Base.metadata
 # Use the same DATABASE_URL as the application (backend/.env or environment), unless a caller
 # (e.g. the test suite) already set sqlalchemy.url explicitly.
 if not config.get_main_option("sqlalchemy.url"):
-    config.set_main_option("sqlalchemy.url", get_settings().database_url.replace("%", "%%"))
+    config.set_main_option("sqlalchemy.url", get_settings().resolved_database_url.replace("%", "%%"))
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
@@ -73,7 +73,8 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection, target_metadata=target_metadata,
+            render_as_batch=connection.dialect.name == "sqlite",  # SQLite cannot ALTER most columns in place
         )
 
         with context.begin_transaction():

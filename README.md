@@ -30,7 +30,23 @@ A financial analysis workspace for FP&A, valuation and learning. You can upload 
 
 ---
 
-## Quick start (step by step)
+## Easiest way: one click (recommended for trying it out)
+
+1. Download the project ZIP and unzip it (right-click → **Extract All**).
+2. Open the unzipped folder:
+   - **Windows:** double-click **`start-windows.bat`**. If Windows shows "Windows protected your PC", click **More info → Run anyway**.
+   - **macOS / Linux:** open Terminal in the folder and run `./start-mac-linux.sh`.
+3. Wait. The first run installs everything automatically and takes about 5–10 minutes; later runs take seconds. Your browser then opens **http://localhost:5173**.
+4. Click **Create an account**.
+
+What the launcher does:
+- Installs **uv** (and through it Python) and, on Windows, **Node.js** if they are missing.
+- Creates a local database file at `backend/storage/finance_studio.db`, so you do **not** need to install PostgreSQL for personal use.
+- Starts the backend and the website in two windows. Keep those windows open while you use the app, and close them to stop it.
+
+The local database file is fine for one person on one computer. For anything shared or put online, use PostgreSQL: follow the manual steps below, or set `DATABASE_URL` in `backend/.env` and the launcher will use it.
+
+## Quick start (step by step, with PostgreSQL)
 
 You need four tools installed. Check them in a terminal:
 

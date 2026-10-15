@@ -24,6 +24,13 @@ _Last updated: 2026-10-15 (session 3)_
 | 7. Persistence & security | Accounts (scrypt, server-side sessions, CSRF/origin check, rate limits), PostgreSQL + Alembic, projects, saved models with versions, history, per-user isolation, retention purge, export and deletion | ✅ Done |
 | 8. Final QA | Full accessibility audit, performance, deployment hardening | ⏳ Ongoing per phase |
 
+## Session 4: one-click local start
+
+- `start-windows.bat` and `start-mac-linux.sh` install missing tools (uv, and Node.js via winget on Windows), use a local SQLite database unless `DATABASE_URL` is set, run the migrations, start both servers and open the browser.
+- Verified here on a clean copy of the repository, as if downloaded as a ZIP: the macOS/Linux launcher installed everything, created the SQLite database and started both servers, and the full browser flow passed (sign-up, projects, uploads, save/restore versions, second-user isolation, sign-out).
+- **The Windows `.bat` could not be executed here (no Windows machine)**. It was checked for syntax and CRLF line endings only, so the first Windows run is its real test.
+- 137 backend tests pass, including the new SQLite path resolution test and the test that production refuses SQLite.
+
 ## Verified in session 3 (Phase 7: persistence and security)
 
 - PostgreSQL 16 runs locally with an `fis_app` role and two databases: `finance_studio` (dev) and `finance_studio_test`. The schema is managed by Alembic (`migrations/`), and the test suite runs downgrade → upgrade on every run.

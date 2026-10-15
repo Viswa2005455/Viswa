@@ -14,7 +14,7 @@ from ..config import get_settings
 
 @lru_cache
 def get_engine(url: str | None = None) -> Engine:
-    url = url or get_settings().database_url
+    url = url or get_settings().resolved_database_url
     kwargs = {"pool_pre_ping": True}
     if url.startswith("sqlite"):
         kwargs["connect_args"] = {"check_same_thread": False}
@@ -23,6 +23,8 @@ def get_engine(url: str | None = None) -> Engine:
         @event.listens_for(engine, "connect")
         def _fk_on(dbapi_conn, _):  # SQLite ignores foreign keys (and ON DELETE CASCADE) unless enabled
             dbapi_conn.execute("PRAGMA foreign_keys=ON")
+            dbapi_conn.execute("PRAGMA journal_mode=WAL")  # lets reads continue while a write is in progress
+            dbapi_conn.execute("PRAGMA busy_timeout=5000")
     return engine
 
 

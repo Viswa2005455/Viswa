@@ -4,6 +4,20 @@ Finance Intelligence Studio stores accounts, projects, saved models and upload m
 **PostgreSQL** (version 14 or newer). The original uploaded file bytes are stored on disk in
 `backend/storage/uploads/<random-id>.bin`.
 
+## Local mode (SQLite)
+
+The one-click launchers (`start-windows.bat`, `start-mac-linux.sh`) set
+`DATABASE_URL=sqlite:///storage/finance_studio.db` when no `DATABASE_URL` is configured.
+The same migrations create the same tables in a single file. This mode:
+
+- is meant for **one person on one computer**;
+- is refused by the server when `FIS_ENV=production`;
+- can be backed up by copying `backend/storage/` while the app is stopped.
+
+To move to PostgreSQL later, create the database (README step 2), set `DATABASE_URL` in
+`backend/.env`, and run `uv run alembic upgrade head`. Data in the SQLite file is not copied
+automatically; use **Settings → Export all my data** before switching.
+
 ## Schema
 
 | Table | Purpose | Key columns |

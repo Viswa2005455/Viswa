@@ -301,3 +301,24 @@ def test_move_upload_between_own_projects_only(client):
     mp = mallory.post("/api/projects", json={"name": "M"}).json()
     assert mallory.patch(f"/api/uploads/{up['id']}", json={"project_id": mp["id"]}).status_code == 404
     assert client.patch(f"/api/uploads/{up['id']}", json={"project_id": mp["id"]}).status_code == 404
+
+
+def test_local_sqlite_url_is_anchored_to_backend_folder(monkeypatch):
+    from app.config import BACKEND_DIR, Settings
+    s = Settings(database_url="sqlite:///storage/finance_studio.db")
+    assert s.is_sqlite
+    assert s.resolved_database_url == "sqlite:///" + (BACKEND_DIR / "storage" / "finance_studio.db").as_posix()
+    pg = Settings(database_url="postgresql+psycopg://u:p@h/db")
+    assert pg.resolved_database_url == "postgresql+psycopg://u:p@h/db" and not pg.is_sqlite
+
+
+def test_production_refuses_sqlite(monkeypatch):
+    monkeypatch.setenv("FIS_ENV", "production")
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///storage/x.db")
+    from app.config import get_settings
+    get_settings.cache_clear()
+    from app import main
+    with pytest.raises(RuntimeError, match="SQLite is for local"):
+        with TestClient(main.app):
+            pass
+    get_settings.cache_clear()
