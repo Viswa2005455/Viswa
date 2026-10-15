@@ -12,29 +12,6 @@ export const Projects = () => (
     available={[{ to: '/upload', label: 'Upload & Analyse' }, { to: '/dcf', label: 'DCF (saved in this browser)' }]} />
 );
 
-export const Budgeting = () => (
-  <UnderDevelopment title="Budgeting" phase="Phase 3"
-    summary="Prepare annual, quarterly and monthly budgets, versions and approvals."
-    planned={['Revenue, expense, operating, capital expenditure and cash budgets', 'Departmental, cost-centre and product-level budgets',
-      'Flexible, zero-based and incremental budgeting', 'Budget versions, comparison and approval status', 'Import budgets from Excel']}
-    available={[{ to: '/variance', label: 'Budget vs actual variance' }, { to: '/upload', label: 'Import a budget file' }]} />
-);
-
-export const Statements = () => (
-  <UnderDevelopment title="Financial Statements" phase="Phase 3"
-    summary="Horizontal, vertical and common-size analysis of income statements, balance sheets and cash flow statements."
-    planned={['Horizontal and vertical (common-size) analysis', 'YoY and QoQ comparisons', 'Earnings quality indicators',
-      'Free cash flow and reconciliation checks (e.g. assets = liabilities + equity)', 'Exportable multi-period reports']}
-    available={[{ to: '/ratios', label: 'Ratio Analysis' }, { to: '/upload', label: 'Upload statements' }]} />
-);
-
-export const CashFlow = () => (
-  <UnderDevelopment title="Cash Flow & Working Capital" phase="Phase 3"
-    summary="Operating, investing and financing cash flows, cash budgets, runway and working-capital scenarios."
-    planned={['Cash budget and runway', 'Liquidity forecasts', 'Working capital scenarios (DIO, DSO, DPO levers)', 'Inflow/outflow driver analysis']}
-    available={[{ to: '/ratios', label: 'Cash conversion cycle (in Ratios)' }, { to: '/forecasting', label: 'Forecast a cash series' }]} />
-);
-
 export const CodeLab = () => (
   <UnderDevelopment title="Data & Code Lab" phase="Phase 5"
     summary="Explain, review and (only with your approval) run Python, SQL and Java in an isolated sandbox."

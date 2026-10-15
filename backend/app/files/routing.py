@@ -27,6 +27,18 @@ SYNONYMS: dict[str, list[str]] = {
     "accounts_payable": [r"^(accounts|trade) payables?$", r"^creditors$"],
     "total_debt": [r"^total (debt|borrowings)$", r"^borrowings$"],
     "total_liabilities": [r"^total liabilities$"],
+    "gross_profit": [r"^gross (profit|margin)$"],
+    "operating_expenses": [r"^(total )?operating expenses$", r"^opex$", r"^(total )?other expenses$"],
+    "ebitda": [r"^ebitda$"],
+    "pretax_income": [r"^profit before tax(ation)?$", r"^pbt$", r"^(income|earnings) before (income )?tax(es)?$"],
+    "income_tax": [r"^(income )?tax( expense)?$", r"^total tax expense$", r"^provision for tax(ation)?$"],
+    "ppe": [r"^property,? plant (and|&) equipment( net)?$", r"^ppe$", r"^fixed assets$"],
+    "capex": [r"^capital expenditure$", r"^capex$", r"^purchase of (property,? plant (and|&) equipment|fixed assets)$"],
+    "investing_cash_flow": [r"^(net )?cash (flow )?(used in |from )?investing activities$"],
+    "financing_cash_flow": [r"^(net )?cash (flow )?(used in |from )?financing activities$"],
+    "net_change_in_cash": [r"^net (increase|decrease|increase decrease|change) in cash( and cash equivalents)?$"],
+    "beginning_cash": [r"^cash( and cash equivalents)? at (the )?beginning of (the )?(year|period)$", r"^opening cash$"],
+    "ending_cash": [r"^cash( and cash equivalents)? at (the )?end of (the )?(year|period)$", r"^closing cash$"],
     "total_equity": [r"^total (shareholders'?|stockholders'?)? ?equity$", r"^(shareholders'?|stockholders'?) equity$", r"^total equity$", r"^net worth$"],
 }
 
@@ -57,7 +69,7 @@ def suggest_statement_mapping(sheets: list[dict], file_name: str) -> list[dict]:
             if s["orientation"] != "row":
                 continue
             key = match_item(s["label"])
-            if not key or key in found:
+            if not key or key in found or key not in ITEMS:
                 continue
             vals, refs, periods = s["values"], s["refs"], s["period_labels"]
             found[key] = {
@@ -102,6 +114,8 @@ def recommend(category: str, parsed: dict) -> list[dict]:
         add("Forecasting", "/forecasting", "Revenue and profit lines can be projected forward.", "medium")
     if scores["balance_sheet"] >= 2:
         add("Ratio Analysis", "/ratios", "Looks like a balance sheet (liquidity and leverage).", "high" if scores["balance_sheet"] >= 3 else "medium")
+    if max(scores.values()) >= 2:
+        add("Financial Statements", "/statements", "Statement-style line items: horizontal, vertical and reconciliation checks.", "high" if max(scores.values()) >= 3 else "medium")
     if scores["cash_flow"] >= 2:
         add("Cash Flow & Working Capital", "/cash-flow", "Looks like a cash flow statement.", "medium")
     if re.search(r"\b(project|initial investment|capex|cash flows?)\b", blob) and re.search(r"\b(year|period|t)\s?0\b", blob):
@@ -160,3 +174,73 @@ def suggest_variance_lines(sheets: list[dict], file_name: str) -> dict | None:
             return {"sheet": sheet["name"], "budget_column": b["name"], "actual_column": a["name"], "lines": lines,
                     "note": "Revenue/expense types were guessed from line names. Please confirm before relying on the result."}
     return None
+
+
+_YEAR = re.compile(r"(?:FY\s?)?((?:19|20)\d{2})|FY\s?(\d{2})\b", re.I)
+
+
+def _period_year(label: str) -> int | None:
+    m = _YEAR.search(label)
+    if not m:
+        return None
+    return int(m.group(1)) if m.group(1) else 2000 + int(m.group(2))
+
+
+_PERIODISH = re.compile(r"\b(?:FY|CY|H[12]|Q[1-4])\s?(?:FY)?\s?'?\d{2,4}\b|\b(?:19|20)\d{2}\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[\s\-']*\d{2,4}\b", re.I)
+
+
+def is_period_label(label: str) -> bool:
+    return bool(_PERIODISH.search(label))
+
+
+def _statement_of(sheet_name: str, labels: list[str]) -> str:
+    blob = (sheet_name + " " + " ".join(labels)).lower()
+    scores = {
+        "income": sum(kw in blob for kw in STATEMENT_KEYWORDS["income_statement"]) + 2 * ("income" in sheet_name.lower() or "p&l" in sheet_name.lower() or "profit" in sheet_name.lower()),
+        "balance": sum(kw in blob for kw in STATEMENT_KEYWORDS["balance_sheet"]) + 2 * ("balance" in sheet_name.lower()),
+        "cashflow": sum(kw in blob for kw in STATEMENT_KEYWORDS["cash_flow"]) + 2 * ("cash" in sheet_name.lower()),
+    }
+    return max(scores, key=scores.get)
+
+
+def suggest_statements(sheets: list[dict], file_name: str) -> list[dict]:
+    """Turn statement-shaped sheets (labels in a column, periods across) into statement grids.
+
+    Periods are reordered oldest-first when headers are years in descending order (common in
+    annual reports). Values keep their source cell reference.
+    """
+    out = []
+    for sheet in sheets:
+        rows = [s for s in sheet.get("series", []) if s["orientation"] == "row"]
+        if len(rows) < 2:
+            continue
+        periods = [c["name"] for c in sheet.get("columns", []) if c["dtype"] == "number"]
+        periods = [p for p in periods if any(p in r["period_labels"] for r in rows)]
+        if len(periods) < 1 or not all(is_period_label(p) for p in periods):
+            continue  # e.g. Budget/Actual columns are not reporting periods
+        years = [_period_year(p) for p in periods]
+        reversed_ = all(y is not None for y in years) and len(years) > 1 and years == sorted(years, reverse=True) and years[0] != years[-1]
+        if reversed_:
+            periods = periods[::-1]
+        statement = _statement_of(sheet["name"], [r["label"] for r in rows])
+        lines, used = [], set()
+        for r in rows:
+            vals, refs = [], []
+            for p in periods:
+                if p in r["period_labels"]:
+                    i = r["period_labels"].index(p)
+                    vals.append(r["values"][i])
+                    refs.append(r["refs"][i])
+                else:
+                    vals.append(None)
+                    refs.append(None)
+            key = match_item(r["label"])
+            if key in used:
+                key = None
+            if key:
+                used.add(key)
+            src_refs = [x for x in refs if x]
+            lines.append({"label": r["label"], "key": key, "values": vals,
+                          "source": f"{file_name} › {sheet['name']} › {src_refs[0]}–{src_refs[-1]}" if src_refs else None})
+        out.append({"sheet": sheet["name"], "statement": statement, "periods": periods, "reordered": reversed_, "lines": lines})
+    return out

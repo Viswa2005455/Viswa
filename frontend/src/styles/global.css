@@ -440,6 +440,7 @@ details.disclosure > .body { padding: 0 14px 14px; animation: fade-in var(--dur)
   .topbar .menu-btn { display: inline-flex; }
   .cols-2, .cols-3 { grid-template-columns: 1fr; }
   .span-2 { grid-column: auto; }
+  .span-2.wide-sm { grid-column: 1 / -1; }
   .content { padding: 20px; }
   .topbar { padding: 0 16px; }
 }

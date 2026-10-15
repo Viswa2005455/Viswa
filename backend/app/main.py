@@ -14,11 +14,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .ai.provider import get_provider
-from .api import dashboard, finance, uploads
+from .api import dashboard, finance, planning, uploads
 from .config import get_settings
 from .finance import FinanceInputError
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 log = logging.getLogger("fis")
 
 settings = get_settings()
@@ -71,5 +71,6 @@ def ai_status():
 
 
 app.include_router(finance.router)
+app.include_router(planning.router)
 app.include_router(uploads.router)
 app.include_router(dashboard.router)

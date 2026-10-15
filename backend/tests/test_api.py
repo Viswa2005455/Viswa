@@ -212,3 +212,75 @@ def test_break_even_endpoint(client):
     assert r["value"] == pytest.approx(0.12, abs=1e-6)
     r2 = client.post("/api/finance/dcf/break-even", json={"model": model, "variable": "wacc", "target": -1, "low": 0.05, "high": 0.3}).json()
     assert r2["value"] is None and r2["message"]
+
+
+# ---------------------------------------------------------------- Phase 3 endpoints
+
+def test_budget_endpoint(client):
+    r = client.post("/api/finance/budget", json={"start_month": 4, "start_year": 2026, "lines": [
+        {"name": "Sales", "kind": "revenue", "method": "annual", "annual": 1200},
+        {"name": "Rent", "kind": "expense", "method": "incremental", "prior_actual": 100, "change_pct": 20},
+    ]}).json()
+    assert r["months"][0] == "Apr-26"
+    assert r["totals_annual"]["operating_result"] == pytest.approx(1080)
+    assert sum(r["lines"][0]["monthly"]) == pytest.approx(1200)
+
+
+def test_budget_endpoint_missing_input(client):
+    r = client.post("/api/finance/budget", json={"lines": [{"name": "Rent", "kind": "expense", "method": "annual"}]})
+    assert r.status_code == 422 and "annual amount" in r.json()["detail"]
+
+
+def test_statements_endpoint(client):
+    r = client.post("/api/finance/statements", json={"periods": ["FY24", "FY25"], "lines": [
+        {"label": "Revenue", "statement": "income", "values": [100, 120], "key": "revenue"},
+        {"label": "Total assets", "statement": "balance", "values": [200, 210], "key": "total_assets"},
+        {"label": "Total liabilities", "statement": "balance", "values": [120, 100], "key": "total_liabilities"},
+        {"label": "Equity", "statement": "balance", "values": [80, 100], "key": "total_equity"},
+    ]}).json()
+    assert r["lines"][0]["changes"][1]["pct"] == pytest.approx(20)
+    statuses = [c["status"] for c in r["checks"]]
+    assert statuses == ["pass", "fail"]
+
+
+def test_cash_budget_and_wc_endpoints(client):
+    r = client.post("/api/finance/cash-budget", json={"periods": ["M1", "M2"], "opening_cash": 100, "minimum_cash": 10,
+                                                     "receipts": [{"name": "Sales", "values": [10, 10]}],
+                                                     "payments": [{"name": "Costs", "values": [60, 60]}]}).json()
+    assert r["periods"][1]["financing"] == pytest.approx(10)
+    assert r["runway"]["months"] == pytest.approx(2)
+    w = client.post("/api/finance/working-capital", json={"revenue": 3650, "cogs": 1825, "receivables": 500, "inventory": 300,
+                                                          "payables": 150, "target_dso": 40, "target_dio": 50, "target_dpo": 40}).json()
+    assert w["cash_released"] == pytest.approx(200)
+
+
+def test_upload_statements_import_reorders_descending_years(client):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Balance Sheet"
+    ws.append(["Particulars", "FY2025", "FY2024"])
+    ws.append(["Total assets", 1300, 1100])
+    ws.append(["Total liabilities", 600, 520])
+    ws.append(["Total equity", 700, 580])
+    buf = io.BytesIO()
+    wb.save(buf)
+    up = upload(client, "bs.xlsx", buf.getvalue())["upload"]
+    st = up["statements"][0]
+    assert st["statement"] == "balance" and st["reordered"] is True
+    assert st["periods"] == ["FY2024", "FY2025"]
+    ta = next(l for l in st["lines"] if l["key"] == "total_assets")
+    assert ta["values"] == [1100, 1300] and ta["source"].endswith("C2–B2")
+    assert any(r["module"] == "Financial Statements" for r in up["recommendations"])
+
+
+def test_period_label_detection():
+    from app.files.routing import is_period_label
+    for ok in ["FY2025", "FY 24", "2023", "Q1 2024", "Q3FY25", "Mar-25", "March 2025", "H1 2024"]:
+        assert is_period_label(ok), ok
+    for bad in ["Budget", "Actual", "Revenue", "Notes", "Column C"]:
+        assert not is_period_label(bad), bad
+
+
+def test_budget_sheet_not_offered_as_statement(client):
+    up = upload(client, "model.xlsx", xlsx_bytes())["upload"]
+    assert [s["sheet"] for s in up["statements"]] == ["P&L"]

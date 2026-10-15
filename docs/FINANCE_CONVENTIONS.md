@@ -55,3 +55,24 @@ These rules apply to every function in `backend/app/finance/`. Each formula is a
 
 ## Rounding
 - The engine never rounds. Rounding happens only when values are displayed.
+
+## Budgeting
+- Money uses Decimal. Monthly amounts are rounded to 2 decimals, and the rounding remainder goes into the last month, so the 12 months always sum exactly to the annual figure.
+- Incremental method: annual = prior-year actual × (1 + change % / 100), then phased.
+- Driver method: month = quantity × rate. Zero-based mode warns about lines with no justification, and about cost lines that are not driver-based.
+- Operating result = revenue − operating expenses. CapEx is reported separately and is not deducted from the operating result.
+- Version comparison matches lines by (type, name) and reports them as added, removed, changed or unchanged.
+- Flexible budget: total cost = fixed + variable rate × activity.
+
+## Financial statements
+- Horizontal Δ% = (current − prior) / |prior| × 100. It is `null` when the prior value is zero, and a note is added when the sign flips.
+- Common-size base: revenue for the income statement and cash flow lines; total assets for balance sheet lines.
+- FCF = operating cash flow − |CapEx|. CapEx may be entered as negative or positive; it is always treated as an outflow.
+- Reconciliation tolerance is 0.5% of the larger value (minimum 1 unit), to allow for rounding in published statements. A failed check flags an inconsistency to investigate; it is not evidence of misstatement.
+- Accruals ratio = (net income − OCF) / average total assets.
+
+## Cash budget and working capital
+- Receipts and payments are entered as positive amounts. Blank cells are rejected; enter 0 explicitly.
+- Financing in a period = max(0, minimum balance − (opening + net flow)). Repayment and interest are not modelled.
+- Runway = cash ÷ average monthly net burn. The page also shows the first month in which unfinanced cash turns negative.
+- Target balances: receivables = DSO × revenue / days; inventory = DIO × COGS / days; payables = DPO × COGS / days. Cash released = (receivables now − target) + (inventory now − target) + (payables target − now).

@@ -4,7 +4,7 @@ import { Layout } from './components/Layout';
 import { DCFModelProvider } from './lib/dcfModel';
 import { SettingsProvider } from './lib/settings';
 import { ToastProvider } from './lib/toast';
-import { Projects, Budgeting, Statements, CashFlow, CodeLab, Assistant, Reports } from './pages/Planned';
+import { Projects, CodeLab, Assistant, Reports } from './pages/Planned';
 import { EmptyState } from './components/ui';
 import { Compass } from 'lucide-react';
 
@@ -18,6 +18,9 @@ const Investment = lazy(() => import('./pages/Investment').then((m) => ({ defaul
 const Scenarios = lazy(() => import('./pages/Scenarios').then((m) => ({ default: m.Scenarios })));
 const Sensitivity = lazy(() => import('./pages/Sensitivity').then((m) => ({ default: m.Sensitivity })));
 const Learning = lazy(() => import('./pages/Learning').then((m) => ({ default: m.Learning })));
+const Budgeting = lazy(() => import('./pages/Budgeting').then((m) => ({ default: m.Budgeting })));
+const Statements = lazy(() => import('./pages/Statements').then((m) => ({ default: m.Statements })));
+const CashFlow = lazy(() => import('./pages/CashFlow').then((m) => ({ default: m.CashFlow })));
 const SettingsPage = lazy(() => import('./pages/Settings').then((m) => ({ default: m.SettingsPage })));
 
 export function App() {

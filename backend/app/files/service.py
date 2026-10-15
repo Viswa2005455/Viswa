@@ -17,7 +17,7 @@ from pathlib import Path
 from ..config import Settings
 from . import archive, documents, tabular
 from .detect import EXTENSIONS, detect, safe_display_name
-from .routing import recommend, suggest_statement_mapping, suggest_variance_lines
+from .routing import recommend, suggest_statement_mapping, suggest_statements, suggest_variance_lines
 
 _lock = threading.Lock()
 ID_LEN = 32
@@ -146,6 +146,7 @@ def save_upload(filename: str, data: bytes, settings: Settings) -> dict:
     record["recommendations"] = recommend(det.category, parsed) if record["status"] == "processed" else []
     record["statement_mapping"] = suggest_statement_mapping(parsed.get("sheets", []), name)
     record["variance_lines"] = suggest_variance_lines(parsed.get("sheets", []), name)
+    record["statements"] = suggest_statements(parsed.get("sheets", []), name)
     record["analysis"] = parsed
 
     d = settings.upload_dir

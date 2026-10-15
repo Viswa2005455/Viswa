@@ -19,6 +19,9 @@ A financial analysis workspace for FP&A, valuation and learning. You can upload 
 | **Scenario Planning** | Base, optimistic, pessimistic and custom scenarios on the DCF model. Includes a comparison table, charts, driver attribution and CSV export. |
 | **Sensitivity Analysis** | Two-variable heatmap, one-variable chart, tornado chart and break-even solver. Every cell re-runs the model. |
 | **Forecasting** | Linear trend, exponential smoothing, moving average and CAGR. Shows prediction intervals and holdout backtest metrics (MAE, RMSE, MAPE). Can use series from your uploads. |
+| **Budgeting** | Monthly budgets by line, department and product, using four methods: direct monthly entry, annual amount with even, custom or seasonal phasing, incremental (prior year ± %) and driver-based (quantity × rate, for zero-based budgeting). Supports versions, approval status, version comparison, a flexible budget, CSV export, and **Compare with actuals**, which sends the budget to Variance Analysis. |
+| **Financial Statements** | Multi-period income statement, balance sheet and cash flow. Includes horizontal analysis (Δ, Δ%, CAGR), common-size analysis, derived metrics (margins, FCF, NWC, cash conversion, accruals ratio, CapEx/D&A), reconciliation checks (A = L + E, cash roll-forward and more) and earnings-quality indicators. Can import sheets from uploads, including annual reports that list years newest-first. |
+| **Cash Flow & Working Capital** | Monthly cash budget with a minimum balance and automatic financing need, runway, receipts vs payments, and working-capital targets (DSO/DIO/DPO) showing how much cash they release. |
 | **Variance Analysis** | Budget vs actual with favourable/adverse logic, materiality, a profit bridge (waterfall), largest contributors, price/volume split, and import from uploads. |
 | **Ratio Analysis** | 29 ratios (liquidity, profitability, efficiency, leverage, valuation). Each shows its formula, inputs, steps and interpretation, and uses average balances when available. Can import statement lines from uploads after you confirm them. |
 | **Learning Centre** | 12 topics with formulas, worked examples, common mistakes and practice questions (PGDM / CMA level). |
@@ -74,7 +77,7 @@ Copy `.env.example` to `backend/.env` and edit it to change upload limits or ena
 ## Run the tests
 
 ```bash
-cd backend && uv run pytest          # 79 tests: financial formulas, parsers, API, security cases
+cd backend && uv run pytest          # 114 tests: financial formulas, parsers, API, security cases
 cd frontend && npm test              # formatting / CSV-safety unit tests
 cd frontend && npm run typecheck     # TypeScript type check
 cd frontend && npm run build         # production build (output in frontend/dist)
@@ -94,8 +97,11 @@ backend/                 Python · FastAPI
     variance.py          Budget vs actual (Decimal arithmetic), price/volume, flexible budget
     ratios.py            29 ratios with formula, steps, interpretation
     forecasting.py       Linear, SES, moving average, CAGR, holdout backtest
+    budgeting.py         Phasing, budgeting methods, roll-ups, version diff, flexible budget
+    statements.py        Horizontal/vertical analysis, reconciliation checks, quality indicators
+    cashflow.py          Cash budget with financing need, runway, working-capital targets
   app/files/             Upload engine: detection, parsers, safe ZIP, routing
-  app/api/               HTTP endpoints (finance, uploads, dashboard)
+  app/api/               HTTP endpoints (finance, planning, uploads, dashboard)
   app/ai/                AI provider abstraction (server-side keys only)
   tests/                 pytest suite
 frontend/                React · TypeScript · Vite · Recharts

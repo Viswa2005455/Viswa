@@ -10,6 +10,7 @@ import { useSettings } from '../lib/settings';
 import { useToast } from '../lib/toast';
 import type { UploadSummary } from '../lib/types';
 import { useAsync, useDebounced } from '../lib/useApi';
+import { loadRaw } from '../lib/storage';
 
 interface Line { name: string; kind: 'revenue' | 'expense'; budget: number | null; actual: number | null; source?: string | null }
 interface OutLine { name: string; kind: string; budget: number; actual: number; variance: number; variance_pct: number | null; status: string; profit_impact: number; material: boolean; notes: string[]; source: string | null }
@@ -52,6 +53,16 @@ export function Variance() {
   };
   const fileParam = params.get('file');
   useEffect(() => { if (fileParam) importFrom(fileParam); }, [fileParam]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Hand-off from the Budgeting page ("Compare with actuals").
+  useEffect(() => {
+    const handoff = loadRaw<{ lines: Line[]; note: string } | null>('fis.variance.import', null);
+    if (handoff?.lines?.length) {
+      setLines(handoff.lines);
+      setIsExample(false);
+      setImportNote(handoff.note);
+      try { localStorage.removeItem('fis.variance.import'); } catch { /* ignore */ }
+    }
+  }, []);
 
   const incomplete = lines.some((l) => !l.name.trim() || l.budget === null || l.actual === null);
   const body = useMemo(() => (incomplete || !lines.length ? null : { lines, materiality_pct: materiality }), [lines, materiality, incomplete]);
