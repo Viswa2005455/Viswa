@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Build output
+frontend/dist/
+*.egg-info/
+
+# Local secrets and data (never commit real data or keys)
+.env
+.env.*
+!.env.example
+backend/storage/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.log
+!backend/tests/fixtures/*.log
