@@ -21,3 +21,4 @@ backend/storage/
 .vscode/
 *.log
 !backend/tests/fixtures/*.log
+*.tsbuildinfo
