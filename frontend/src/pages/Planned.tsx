@@ -3,15 +3,6 @@ import { Card, Badge, Callout, PageHeader, Skeleton, UnderDevelopment } from '..
 import { api } from '../lib/api';
 import { useAsync } from '../lib/useApi';
 
-export const Projects = () => (
-  <UnderDevelopment title="My Projects" phase="Phase 7"
-    summary="Projects group your files, assumptions, scenarios and reports under one name, with saved history."
-    planned={['Create, rename and delete projects', 'Attach multiple uploads per project', 'Save DCF, scenario and budget models with version history',
-      'Reopen previous analyses and reports', 'Per-account data isolation (authentication + PostgreSQL row-level security)',
-      'Documented retention and deletion policy']}
-    available={[{ to: '/upload', label: 'Upload & Analyse' }, { to: '/dcf', label: 'DCF (saved in this browser)' }]} />
-);
-
 export const CodeLab = () => (
   <UnderDevelopment title="Data & Code Lab" phase="Phase 5"
     summary="Explain, review and (only with your approval) run Python, SQL and Java in an isolated sandbox."

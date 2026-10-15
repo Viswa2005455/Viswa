@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { DCFAssumptions } from '../components/DCFInputs';
+import { SaveLoad } from '../components/SaveLoad';
 import { C, ChartTooltip, Legend, axisProps, gridProps } from '../components/charts';
 import { Badge, Callout, Card, ErrorBox, Formula, Kpi, LearnBox, NumberField, PageHeader, Warnings } from '../components/ui';
 import { api } from '../lib/api';
@@ -13,7 +14,7 @@ import type { DCFResult } from '../lib/types';
 import { useAsync, useDebounced } from '../lib/useApi';
 
 export function DCF() {
-  const { model, patch, reset, isExample } = useDCFModel();
+  const { model, patch, reset, isExample, setModel } = useDCFModel();
   const { settings } = useSettings();
   const cur = settings.currency;
   const req = useDebounced(model, 250);
@@ -50,6 +51,7 @@ export function DCF() {
       <PageHeader title="DCF Valuation" badge={isExample ? <Badge tone="sample">Example assumptions</Badge> : <Badge tone="accent">Your assumptions</Badge>}
         subtitle="Unlevered free cash flow (FCFF) model. These assumptions are shared with Scenario Planning and Sensitivity Analysis."
         actions={<>
+          <SaveLoad kind="dcf" label="DCF model" getData={() => model} onLoad={(m) => setModel(m)} />
           <button className="btn" onClick={reset}><RotateCcw size={15} />Reset to example</button>
           <Link className="btn" to="/sensitivity">Sensitivity <ArrowRight size={15} /></Link>
         </>} />

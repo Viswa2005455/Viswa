@@ -3,6 +3,7 @@ import { Fragment, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { C, ChartTooltip, Legend, axisProps, gridProps } from '../components/charts';
+import { SaveLoad } from '../components/SaveLoad';
 import { Badge, Callout, Card, ErrorBox, Field, Kpi, LearnBox, NumberField, PageHeader, Warnings } from '../components/ui';
 import { api } from '../lib/api';
 import { downloadFile, fmtCompact, fmtMoney, fmtNum, fmtPctPoints, isNum, toCSV } from '../lib/format';
@@ -122,6 +123,7 @@ export function Budgeting() {
       <PageHeader title="Budgeting" badge={store.isExample ? <Badge tone="sample">Example budget</Badge> : undefined}
         subtitle="Build monthly budgets line by line using direct entry, annual phasing, incremental or driver-based (zero-based) methods. Save versions, compare them and send the budget to Variance Analysis."
         actions={<>
+          <SaveLoad kind="budget" label="budget" getData={() => store} onLoad={(d: Store) => { setStore({ ...d, isExample: false }); setCompareId(''); }} />
           <button className="btn" onClick={() => { setStore(EXAMPLE); setCompareId(''); }}><RotateCcw size={15} />Example</button>
           <button className="btn" onClick={exportCsv} disabled={!r}><Download size={15} />Export CSV</button>
           <button className="btn primary" onClick={sendToVariance} disabled={!r}>Compare with actuals <ArrowRight size={15} /></button>

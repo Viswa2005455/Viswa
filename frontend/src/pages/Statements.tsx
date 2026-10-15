@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { C, ChartTooltip, Legend, axisProps, gridProps } from '../components/charts';
+import { SaveLoad } from '../components/SaveLoad';
 import { Badge, Callout, Card, ErrorBox, Kpi, LearnBox, NumberField, PageHeader, Tabs, Warnings } from '../components/ui';
 import { api } from '../lib/api';
 import { downloadFile, fmtCompact, fmtNum, fmtPct, fmtPctPoints, isNum, toCSV } from '../lib/format';
@@ -130,6 +131,7 @@ export function Statements() {
       <PageHeader title="Financial Statements" badge={isExample ? <Badge tone="sample">Example data</Badge> : <Badge tone="accent">Your data</Badge>}
         subtitle="Horizontal (period-over-period), vertical (common-size) and reconciliation analysis of the income statement, balance sheet and cash flow statement."
         actions={<>
+          <SaveLoad kind="statements" label="statements" getData={() => data} onLoad={(d: Data) => setData(d)} />
           <button className="btn" onClick={() => setData(EXAMPLE, true)}><RotateCcw size={15} />Example</button>
           <button className="btn" onClick={exportCsv} disabled={!r}><Download size={15} />Export CSV</button>
         </>} />

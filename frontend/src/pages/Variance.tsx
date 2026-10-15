@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { C, axisProps, gridProps } from '../components/charts';
+import { SaveLoad } from '../components/SaveLoad';
 import { Badge, Callout, Card, ErrorBox, Formula, Kpi, LearnBox, NumberField, PageHeader } from '../components/ui';
 import { api } from '../lib/api';
 import { downloadFile, fmtCompact, fmtMoney, fmtPctPoints, isNum, toCSV } from '../lib/format';
@@ -101,6 +102,8 @@ export function Variance() {
       <PageHeader title="Variance Analysis" badge={isExample ? <Badge tone="sample">Example data</Badge> : undefined}
         subtitle="Compare actual results with budget, line by line and in total. Variances are classified by their effect on profit."
         actions={<>
+          <SaveLoad kind="variance" label="variance analysis" getData={() => ({ lines, materiality })}
+            onLoad={(d: { lines: Line[]; materiality: number | null }) => { setLines(d.lines); setMateriality(d.materiality); setIsExample(false); setImportNote(null); }} />
           <button className="btn" onClick={() => { setLines(EXAMPLE); setIsExample(true); setImportNote(null); }}><RotateCcw size={15} />Example</button>
           <button className="btn" onClick={exportCsv} disabled={!r}><Download size={15} />Export CSV</button>
         </>} />

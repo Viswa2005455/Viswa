@@ -7,6 +7,8 @@ import { api } from '../lib/api';
 import { fmtNum, fmtPctPoints, fmtRatio, isNum } from '../lib/format';
 import type { UploadSummary } from '../lib/types';
 import { useAsync } from '../lib/useApi';
+import { useAuth } from '../lib/auth';
+import { useProjects } from '../lib/project';
 
 interface Dashboard {
   is_sample: boolean; company: string; currency: string; units: string; period: string;
@@ -30,7 +32,9 @@ function delta(v: number, prior?: number) {
 
 export function Overview() {
   const dash = useAsync(() => api.get<Dashboard>('/api/dashboard/sample'), []);
-  const uploads = useAsync(() => api.get<{ uploads: UploadSummary[] }>('/api/uploads'), []);
+  const { user } = useAuth();
+  const { active, activeId } = useProjects();
+  const uploads = useAsync(() => api.get<{ uploads: UploadSummary[] }>(`/api/uploads${activeId ? `?project_id=${activeId}` : ''}`), [activeId]);
   const d = dash.data;
 
   const chartData = d ? [
@@ -41,14 +45,11 @@ export function Overview() {
   return (
     <div className="page">
       <PageHeader
-        title="Welcome back"
-        subtitle={<>Your financial analysis workspace. The dashboard below uses a <b>fictional sample company</b> until project-level data is available (Phase 7); your uploads are listed separately.</>}
+        title={`Welcome back, ${user?.display_name.split(' ')[0] ?? ''}`}
+        subtitle={<>The dashboard below uses a <b>fictional sample company</b> to demonstrate the analysis engine. Your own files and saved models live in <Link to="/projects">your projects</Link>{active ? <> — active project: <b>{active.name}</b></> : null}.</>}
         badge={<SampleBadge />}
         actions={<>
-          <select className="input" style={{ width: 260 }} aria-label="Project" defaultValue="sample">
-            <option value="sample">Sample: Northwind Components</option>
-            <option disabled>Your projects — coming in Phase 7</option>
-          </select>
+          <Link to="/projects" className="btn">My projects</Link>
           <Link to="/upload" className="btn primary"><FileUp size={16} />Upload data</Link>
         </>}
       />
@@ -161,7 +162,7 @@ export function Overview() {
             ))}
           </div>
         </Card>
-        <Card title="Recent uploads" subtitle="Your files (real data, never mixed with the sample)">
+        <Card title="Recent uploads" subtitle={active ? `In ${active.name} (your data, never mixed with the sample)` : "Your files (real data, never mixed with the sample)"}>
           {uploads.loading && !uploads.data ? <Skeleton h={60} /> : uploads.error ? <ErrorBox error={uploads.error} /> :
             uploads.data?.uploads.length ? (
               <div className="list">

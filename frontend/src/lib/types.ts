@@ -39,7 +39,7 @@ export interface DCFResult {
 
 export interface UploadSummary {
   id: string; name: string; extension: string; category: string; label: string; size: number; uploaded_at: string;
-  status: 'processed' | 'failed'; error: string | null; summary: string;
+  status: 'processed' | 'failed'; error: string | null; summary: string; expires_at?: string; project_id?: string | null;
   recommendations: { module: string; route: string; reason: string; confidence: 'high' | 'medium' | 'low' }[];
 }
 

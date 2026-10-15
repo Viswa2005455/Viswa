@@ -21,9 +21,26 @@ class Settings(BaseSettings):
     fis_zip_max_entries: int = 200
     fis_zip_max_uncompressed_mb: int = 100
 
+    # PostgreSQL connection. The default points at the local development database created in
+    # README step 2; production must override it (startup refuses the dev password in production).
+    database_url: str = "postgresql+psycopg://fis_app:fis_dev_password@localhost:5432/finance_studio"
+
+    fis_session_days: int = 14
+    fis_upload_retention_days: int = 90
+    fis_allow_registration: bool = True
+    fis_cookie_secure: bool | None = None  # None = secure cookies automatically in production
+
     fis_ai_provider: str = "none"
     anthropic_api_key: SecretStr | None = None
     fis_ai_model: str = "claude-sonnet-5-5"
+
+    @property
+    def is_production(self) -> bool:
+        return self.fis_env.lower() == "production"
+
+    @property
+    def cookie_secure(self) -> bool:
+        return self.is_production if self.fis_cookie_secure is None else self.fis_cookie_secure
 
     @property
     def cors_origins(self) -> list[str]:

@@ -2,6 +2,7 @@ import { Download, FileUp, RotateCcw } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Badge, Callout, Card, ErrorBox, Formula, LearnBox, NumberField, PageHeader, Tabs } from '../components/ui';
+import { SaveLoad } from '../components/SaveLoad';
 import { api } from '../lib/api';
 import { downloadFile, fmtNum, fmtRatio, isNum, toCSV } from '../lib/format';
 import { useSettings } from '../lib/settings';
@@ -87,6 +88,8 @@ export function Ratios() {
       <PageHeader title="Ratio Analysis" badge={isExample ? <Badge tone="sample">Example data</Badge> : undefined}
         subtitle="Liquidity, profitability, efficiency, leverage and valuation ratios — each with its formula, inputs, calculation, interpretation and limitations."
         actions={<>
+          <SaveLoad kind="ratios" label="ratio inputs" getData={() => ({ data, days, sources })}
+            onLoad={(d: { data: Data; days: number | null; sources?: Record<string, string> }) => { setData(d.data); setDays(d.days); setSources(d.sources ?? {}); setIsExample(false); }} />
           <button className="btn" onClick={() => { setData(EXAMPLE); setIsExample(true); setSources({}); }}><RotateCcw size={15} />Example</button>
           <button className="btn" onClick={() => { setData({}); setIsExample(false); setSources({}); }}>Clear</button>
           <button className="btn" onClick={exportCsv} disabled={!ratios.length}><Download size={15} />Export CSV</button>

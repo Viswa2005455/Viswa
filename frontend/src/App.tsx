@@ -4,7 +4,11 @@ import { Layout } from './components/Layout';
 import { DCFModelProvider } from './lib/dcfModel';
 import { SettingsProvider } from './lib/settings';
 import { ToastProvider } from './lib/toast';
-import { Projects, CodeLab, Assistant, Reports } from './pages/Planned';
+import { CodeLab, Assistant, Reports } from './pages/Planned';
+import { AuthProvider, useAuth } from './lib/auth';
+import { ProjectProvider } from './lib/project';
+import { AuthScreen } from './pages/Auth';
+import { Activity } from 'lucide-react';
 import { EmptyState } from './components/ui';
 import { Compass } from 'lucide-react';
 
@@ -21,12 +25,28 @@ const Learning = lazy(() => import('./pages/Learning').then((m) => ({ default: m
 const Budgeting = lazy(() => import('./pages/Budgeting').then((m) => ({ default: m.Budgeting })));
 const Statements = lazy(() => import('./pages/Statements').then((m) => ({ default: m.Statements })));
 const CashFlow = lazy(() => import('./pages/CashFlow').then((m) => ({ default: m.CashFlow })));
+const Projects = lazy(() => import('./pages/Projects').then((m) => ({ default: m.Projects })));
 const SettingsPage = lazy(() => import('./pages/Settings').then((m) => ({ default: m.SettingsPage })));
 
 export function App() {
   return (
     <SettingsProvider>
       <ToastProvider>
+        <AuthProvider>
+          <Gate />
+        </AuthProvider>
+      </ToastProvider>
+    </SettingsProvider>
+  );
+}
+
+/** Everything except the sign-in screen requires an account. */
+function Gate() {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="splash"><div className="brand-mark" style={{ width: 44, height: 44 }}><Activity size={22} /></div></div>;
+  if (!user) return <AuthScreen />;
+  return (
+    <ProjectProvider key={user.id}>
         <DCFModelProvider>
           <BrowserRouter>
             <Routes>
@@ -54,7 +74,6 @@ export function App() {
             </Routes>
           </BrowserRouter>
         </DCFModelProvider>
-      </ToastProvider>
-    </SettingsProvider>
+    </ProjectProvider>
   );
 }

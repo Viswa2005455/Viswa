@@ -4,7 +4,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-(cd "$ROOT/backend" && uv run uvicorn app.main:app --reload --port 8000) &
+(cd "$ROOT/backend" && uv run alembic upgrade head && uv run uvicorn app.main:app --reload --port 8000) &
 API_PID=$!
 trap 'kill $API_PID 2>/dev/null' EXIT
 

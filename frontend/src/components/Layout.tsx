@@ -1,11 +1,13 @@
-import { Menu, Moon, Sun, Activity } from 'lucide-react';
+import { Menu, Moon, Sun, Activity, LogOut } from 'lucide-react';
 import { Suspense, useEffect, useState } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { NAV } from '../nav';
 import { CURRENCIES, type Currency } from '../lib/format';
 import { useSettings } from '../lib/settings';
 import { api } from '../lib/api';
 import { SkeletonCards } from './ui';
+import { useAuth } from '../lib/auth';
+import { useProjects } from '../lib/project';
 
 export function Layout() {
   const [open, setOpen] = useState(false);
@@ -13,6 +15,9 @@ export function Layout() {
   const loc = useLocation();
   const current = NAV.find((n) => (n.to === '/' ? loc.pathname === '/' : loc.pathname.startsWith(n.to)));
   const [apiOk, setApiOk] = useState<boolean | null>(null);
+  const { user, logout } = useAuth();
+  const { projects, activeId, setActive } = useProjects();
+  const navigate = useNavigate();
 
   useEffect(() => { setOpen(false); window.scrollTo(0, 0); }, [loc.pathname]);
   useEffect(() => {
@@ -52,9 +57,21 @@ export function Layout() {
             ];
           })}
         </nav>
-        <div style={{ marginTop: 'auto', padding: '12px 18px 18px', fontSize: 12 }} className="faint">
-          <span className={`status-dot ${apiOk ? 'ok' : apiOk === false ? 'bad' : ''}`} />{' '}
-          {apiOk === null ? 'Checking API…' : apiOk ? 'API connected' : 'API offline'}
+        <div style={{ marginTop: 'auto' }}>
+          <div style={{ padding: '8px 18px', fontSize: 12 }} className="faint">
+            <span className={`status-dot ${apiOk ? 'ok' : apiOk === false ? 'bad' : ''}`} />{' '}
+            {apiOk === null ? 'Checking API…' : apiOk ? 'API connected' : 'API offline'}
+          </div>
+          {user && (
+            <div className="user-chip">
+              <div className="avatar" aria-hidden="true">{user.display_name.slice(0, 1).toUpperCase()}</div>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div className="truncate" style={{ fontWeight: 600, fontSize: 13 }}>{user.display_name}</div>
+                <div className="truncate faint" style={{ fontSize: 11.5 }}>{user.email}</div>
+              </div>
+              <button className="btn icon sm ghost" aria-label="Sign out" title="Sign out" onClick={logout}><LogOut size={16} /></button>
+            </div>
+          )}
         </div>
       </aside>
       <div className="scrim" onClick={() => setOpen(false)} />
@@ -64,7 +81,13 @@ export function Layout() {
           <div className="topbar-title">{current?.label ?? 'Not found'}</div>
           <div className="topbar-spacer" />
           <div className="topbar-controls">
-            <label className="hide-sm row" style={{ gap: 6 }}>
+            <select className="input compact project-select" aria-label="Active project" value={activeId ?? ''}
+              onChange={(e) => { if (e.target.value === '__manage') navigate('/projects'); else setActive(e.target.value || null); }}>
+              <option value="">No project selected</option>
+              {projects.filter((p) => !p.archived || p.id === activeId).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              <option value="__manage">Manage projects…</option>
+            </select>
+            <label className="hide-md row" style={{ gap: 6 }}>
               <span className="sr-only">Reporting period</span>
               <input className="input compact" type="month" style={{ width: 132 }} value={settings.periodFrom} aria-label="Period from"
                 onChange={(e) => update({ periodFrom: e.target.value })} />

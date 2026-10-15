@@ -12,6 +12,7 @@ A financial analysis workspace for FP&A, valuation and learning. You can upload 
 
 | Area | What you can do |
 |---|---|
+| **Accounts & projects** | Sign up and sign in; every user's files, projects and saved models are private. **My Projects** groups uploads and saved models by company or assignment. **Save / Open** on the DCF, Scenarios, Budgeting, Statements, Cash Flow, Variance and Ratios pages stores every save as a version you can restore. Each project has a history timeline and JSON export. |
 | **Overview** | KPI cards, revenue forecast with prediction interval, budget vs actual, health ratios. Uses a clearly labelled **fictional sample company**. |
 | **Upload & Analyse** | Drag-and-drop multiple files: Excel (`.xlsx` `.xlsm` `.xls`), CSV/TSV, PDF, Word (`.docx`), text, JSON/XML/YAML/TOML, notebooks, Python/SQL/Java/JS/TS/R/SAS and more, plus safe ZIP inspection. You get previews with cell references, formula detection, data-quality warnings, detected currency/units/periods, and recommended analyses. |
 | **Investment Appraisal** | NPV, IRR (detects multiple IRRs and cases with no IRR), MIRR, payback, discounted payback, PI, EAA, NPV profile, step-by-step table. |
@@ -25,18 +26,19 @@ A financial analysis workspace for FP&A, valuation and learning. You can upload 
 | **Variance Analysis** | Budget vs actual with favourable/adverse logic, materiality, a profit bridge (waterfall), largest contributors, price/volume split, and import from uploads. |
 | **Ratio Analysis** | 29 ratios (liquidity, profitability, efficiency, leverage, valuation). Each shows its formula, inputs, steps and interpretation, and uses average balances when available. Can import statement lines from uploads after you confirm them. |
 | **Learning Centre** | 12 topics with formulas, worked examples, common mistakes and practice questions (PGDM / CMA level). |
-| **Settings** | Light, dark or system theme; reduced motion; learning mode; AI provider status; data deletion. |
+| **Settings** | Change your password and see signed-in devices (with "sign out other devices"). Export all your data, delete it, or delete your account. Also: light/dark/system theme, reduced motion, learning mode and AI provider status. |
 
 ---
 
 ## Quick start (step by step)
 
-You need three tools installed. Check them in a terminal:
+You need four tools installed. Check them in a terminal:
 
 ```bash
-node --version     # needs v20 or newer
-python3 --version  # needs 3.11 or newer
-uv --version       # Python package manager; install: https://docs.astral.sh/uv/
+node --version     # needs v20 or newer          → https://nodejs.org
+python3 --version  # needs 3.11 or newer         → https://www.python.org
+uv --version       # Python package manager      → https://docs.astral.sh/uv/
+psql --version     # PostgreSQL 14 or newer      → see step 2
 ```
 
 ### 1. Get the code
@@ -46,17 +48,40 @@ git clone https://github.com/Viswa2005455/Viswa.git
 cd Viswa
 ```
 
-### 2. Start the backend (the calculation server)
+### 2. Set up the database (first time only)
+
+The app stores accounts, projects, saved models and file metadata in **PostgreSQL**.
+
+1. Install PostgreSQL:
+   - **Windows / macOS:** use the installer from https://www.postgresql.org/download/. On macOS, `brew install postgresql@16 && brew services start postgresql@16` also works.
+   - **Ubuntu / Debian:** `sudo apt install postgresql`
+2. Open a PostgreSQL prompt as the admin user:
+   - **macOS / Windows:** `psql -U postgres`
+   - **Linux:** `sudo -u postgres psql`
+3. Paste these three lines. They create a login and two databases, one for the app and one for the tests:
+
+   ```sql
+   CREATE ROLE fis_app LOGIN PASSWORD 'fis_dev_password';
+   CREATE DATABASE finance_studio OWNER fis_app;
+   CREATE DATABASE finance_studio_test OWNER fis_app;
+   ```
+
+   Type `\q` to leave psql.
+
+This password is for **your computer only**; the server refuses to start in production with it. Prefer a hosted database? See [docs/DATABASE.md](docs/DATABASE.md) for Supabase or any managed PostgreSQL.
+
+### 3. Start the backend (the calculation server)
 
 ```bash
 cd backend
-uv sync                                   # installs Python packages into backend/.venv
+uv sync                          # installs Python packages into backend/.venv
+uv run alembic upgrade head      # creates/updates the database tables (run again after every update)
 uv run uvicorn app.main:app --reload --port 8000
 ```
 
-Leave this terminal open. To check it is running, open http://localhost:8000/api/health in a browser. You should see `{"status":"ok", ...}`. Interactive API docs are at http://localhost:8000/docs.
+Leave this terminal open. To check it is running, open http://localhost:8000/api/health. You should see `"status":"ok"` and `"database":"ok"`.
 
-### 3. Start the frontend (the website), in a second terminal
+### 4. Start the frontend (the website), in a second terminal
 
 ```bash
 cd frontend
@@ -64,24 +89,26 @@ npm install        # first time only
 npm run dev
 ```
 
-Open **http://localhost:5173**. The sidebar's bottom-left corner should say **"API connected"**.
+Open **http://localhost:5173** and click **Create an account**. Your account exists only in your local database.
 
-> **Shortcut:** `./scripts/dev.sh` starts both servers in one terminal (macOS/Linux).
+> **Shortcut:** `./scripts/dev.sh` runs the migrations and starts both servers in one terminal (macOS/Linux).
 
-### 4. Optional: configuration
+### 5. Optional: configuration
 
-Copy `.env.example` to `backend/.env` and edit it to change upload limits or enable an AI provider. The app works fully without this file.
+Copy `.env.example` to `backend/.env` to change the database address, upload limits, retention period, session length, registration, or to enable an AI provider.
 
 ---
 
 ## Run the tests
 
 ```bash
-cd backend && uv run pytest          # 114 tests: financial formulas, parsers, API, security cases
+cd backend && uv run pytest          # 135 tests: formulas, parsers, API, accounts, access control, retention
 cd frontend && npm test              # formatting / CSV-safety unit tests
 cd frontend && npm run typecheck     # TypeScript type check
 cd frontend && npm run build         # production build (output in frontend/dist)
 ```
+
+The backend tests use the `finance_studio_test` database and build it with the real migrations. If PostgreSQL is not running, they fall back to SQLite and print a warning, so the formula tests still run.
 
 ---
 
@@ -100,14 +127,17 @@ backend/                 Python · FastAPI
     budgeting.py         Phasing, budgeting methods, roll-ups, version diff, flexible budget
     statements.py        Horizontal/vertical analysis, reconciliation checks, quality indicators
     cashflow.py          Cash budget with financing need, runway, working-capital targets
-  app/files/             Upload engine: detection, parsers, safe ZIP, routing
-  app/api/               HTTP endpoints (finance, planning, uploads, dashboard)
+  app/files/             Upload engine: detection, parsers, safe ZIP, routing, retention purge
+  app/api/               HTTP endpoints (auth, projects, saved models, finance, planning, uploads)
+  app/auth/              Password hashing (scrypt), sessions, rate limiting
+  app/db/                SQLAlchemy models and database session
+  migrations/            Alembic database migrations
   app/ai/                AI provider abstraction (server-side keys only)
   tests/                 pytest suite
 frontend/                React · TypeScript · Vite · Recharts
   src/pages/             One file per sidebar section
   src/components/        UI kit, charts, code viewer, sheet preview
-  src/lib/               API client, formatting, settings, shared DCF model
+  src/lib/               API client, auth and project context, formatting, settings, shared DCF model
 docs/                    Conventions and security notes
 legacy/personal-tracker/ The earlier single-file personal finance tracker (kept for reference)
 ```
@@ -125,7 +155,13 @@ Full details: [docs/FINANCE_CONVENTIONS.md](docs/FINANCE_CONVENTIONS.md).
 
 ## Production build and deployment (outline)
 
-1. `cd frontend && npm run build` and serve `frontend/dist/` as static files (for example with Nginx or any static host).
-2. Run the API with a process manager, for example `uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2`, behind HTTPS on the same domain, with `/api` routed to it.
-3. Set `FIS_ENV=production` and `FIS_CORS_ORIGINS` to your site's address, and keep `backend/.env` out of git.
-4. **Before exposing it to the internet**, complete Phase 7 (authentication and per-user isolation). Right now any visitor could see every upload.
+1. Create a production PostgreSQL database with a strong password (or use Supabase/RDS/Cloud SQL). Then set `DATABASE_URL` and run `uv run alembic upgrade head`.
+2. Run `cd frontend && npm run build` and serve `frontend/dist/` as static files (for example with Nginx or any static host).
+3. Run the API behind HTTPS on the **same domain**, with `/api` routed to it, for example:
+   `uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1 --proxy-headers`
+4. Set the following in `backend/.env` and keep that file out of git:
+   - `FIS_ENV=production` — this makes cookies `Secure`, adds HSTS, and refuses the development database password.
+   - `FIS_CORS_ORIGINS` — your site's address.
+   - `FIS_ALLOW_REGISTRATION=false` — once your own accounts exist, if the site is private.
+5. Limit the request body size in the reverse proxy (Nginx: `client_max_body_size 30m;`).
+6. Read [docs/SECURITY.md](docs/SECURITY.md) first. Rate limiting is per process: with several workers or servers, use the proxy's rate limiting.

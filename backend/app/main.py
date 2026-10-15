@@ -1,35 +1,87 @@
 """Finance Intelligence Studio API.
 
-Run locally:  uv run uvicorn app.main:app --reload --port 8000
+Run locally:  uv run alembic upgrade head   (first time and after updates)
+              uv run uvicorn app.main:app --reload --port 8000
 """
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from dataclasses import asdict
+from urllib.parse import urlsplit
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from .ai.provider import get_provider
-from .api import dashboard, finance, planning, uploads
+from .api import auth, dashboard, finance, planning, projects, uploads
+from .auth.deps import current_user
 from .config import get_settings
+from .db.session import session_factory
+from .files.service import purge_expired
 from .finance import FinanceInputError
 
-VERSION = "0.5.0"
+VERSION = "0.7.0"
 log = logging.getLogger("fis")
+UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def run_purge() -> None:
+    try:
+        with session_factory()() as db:
+            result = purge_expired(db, get_settings())
+            if any(result.values()):
+                log.info("Retention purge: %s", result)
+    except Exception:  # never crash the server because of housekeeping
+        log.exception("Retention purge failed")
+
+
+@contextlib.asynccontextmanager
+async def lifespan(_: FastAPI):
+    s = get_settings()
+    if s.is_production and "fis_dev_password" in s.database_url:
+        raise RuntimeError("Refusing to start in production with the development database password. Set DATABASE_URL.")
+
+    async def periodic():
+        while True:
+            await asyncio.to_thread(run_purge)
+            await asyncio.sleep(3600)
+
+    task = asyncio.create_task(periodic())
+    try:
+        yield
+    finally:
+        task.cancel()
+
 
 settings = get_settings()
-app = FastAPI(title="Finance Intelligence Studio API", version=VERSION)
+app = FastAPI(title="Finance Intelligence Studio API", version=VERSION, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
-    allow_methods=["GET", "POST", "DELETE"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Content-Type"],
 )
+
+
+@app.middleware("http")
+async def origin_check(request: Request, call_next):
+    """CSRF defence in depth (cookies are also SameSite=Lax): browsers send an Origin header on
+    cross-site state-changing requests; reject any that is not this site or an allowed origin."""
+    if request.method in UNSAFE_METHODS:
+        origin = request.headers.get("origin")
+        if origin:
+            same_host = urlsplit(origin).netloc == request.headers.get("host", "")
+            if not same_host and origin not in get_settings().cors_origins:
+                return JSONResponse(status_code=403, content={"detail": "Cross-site request blocked.", "type": "csrf"})
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -38,6 +90,9 @@ async def security_headers(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Cache-Control"] = "no-store"
+    if get_settings().is_production:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 
 
@@ -62,15 +117,32 @@ async def unhandled(_: Request, exc: Exception):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "version": VERSION, "environment": settings.fis_env}
+    db_ok = True
+    try:
+        with session_factory()() as db:
+            db.execute(text("select 1"))
+    except Exception:
+        db_ok = False
+    return {"status": "ok" if db_ok else "degraded", "version": VERSION, "environment": get_settings().fis_env,
+            "database": "ok" if db_ok else "unreachable"}
 
 
-@app.get("/api/ai/status")
+@app.get("/api/ai/status", dependencies=[Depends(current_user)])
 def ai_status():
-    return asdict(get_provider(settings).status())
+    return asdict(get_provider(get_settings()).status())
 
 
-app.include_router(finance.router)
-app.include_router(planning.router)
+# Public: sign-up and sign-in. Everything else requires a valid session.
+app.include_router(auth.router)
+app.include_router(auth.account)
+app.include_router(projects.router)
 app.include_router(uploads.router)
-app.include_router(dashboard.router)
+protected = [Depends(current_user)]
+app.include_router(finance.router, dependencies=protected)
+app.include_router(planning.router, dependencies=protected)
+app.include_router(dashboard.router, dependencies=protected)
+
+
+@app.api_route("/api/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)
+def not_found(rest: str):
+    raise HTTPException(404, "Not found.")

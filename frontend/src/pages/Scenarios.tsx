@@ -3,6 +3,8 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { C, ChartTooltip, Legend, axisProps, gridProps } from '../components/charts';
+import { SaveLoad } from '../components/SaveLoad';
+import type { DCFModel } from '../lib/types';
 import { Badge, Callout, Card, ErrorBox, LearnBox, NumberField, PageHeader } from '../components/ui';
 import { api } from '../lib/api';
 import { useDCFModel } from '../lib/dcfModel';
@@ -45,7 +47,7 @@ function attributionRuns(s: Scenario): Scenario[] {
 }
 
 export function Scenarios() {
-  const { model, isExample } = useDCFModel();
+  const { model, isExample, setModel } = useDCFModel();
   const { settings } = useSettings();
   const cur = settings.currency;
   const [scenarios, setScenariosState] = useState<Scenario[]>(() => loadRaw('fis.scenarios', DEFAULTS));
@@ -106,6 +108,8 @@ export function Scenarios() {
         subtitle={<>Each scenario changes assumptions of the shared <Link to="/dcf">DCF model</Link> and is fully recalculated. Shifts are in percentage points; overrides replace the base value.</>}
         actions={<>
           <button className="btn" onClick={() => setScenarios([...scenarios, { id: uid(), name: `Custom ${scenarios.length}`, revenue_growth_shift: 0, ebit_margin_shift: 0, overrides: {} }])} disabled={scenarios.length >= 5}><Plus size={15} />Add scenario</button>
+          <SaveLoad kind="scenarios" label="scenario set" getData={() => ({ scenarios, model })}
+            onLoad={(d: { scenarios: Scenario[]; model?: DCFModel }) => { setScenarios(d.scenarios); if (d.model) setModel(d.model); }} />
           <button className="btn" onClick={() => setScenarios(DEFAULTS)}><RotateCcw size={15} />Defaults</button>
           <button className="btn" onClick={exportCsv} disabled={!res.data}><Download size={15} />Export CSV</button>
         </>} />

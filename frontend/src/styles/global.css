@@ -152,13 +152,14 @@ code, pre, .mono { font-family: var(--font-mono); font-size: .92em; }
 .shell { position: relative; z-index: 1; display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100%; }
 
 .sidebar {
-  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  position: sticky; top: 0; height: 100vh; overflow: hidden;
   border-right: 1px solid var(--border);
   background: color-mix(in srgb, var(--bg-elev) 82%, transparent);
   backdrop-filter: blur(10px);
   display: flex; flex-direction: column;
   scrollbar-width: thin;
 }
+.sidebar .nav { flex: 1; overflow-y: auto; min-height: 0; scrollbar-width: thin; }
 .brand { display: flex; align-items: center; gap: 10px; padding: 16px 18px 8px; }
 .brand-mark {
   width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; flex: none;
@@ -192,6 +193,7 @@ code, pre, .mono { font-family: var(--font-mono); font-size: .92em; }
 .topbar-title { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .topbar-spacer { flex: 1; }
 .topbar-controls { display: flex; align-items: center; gap: 8px; }
+.topbar-controls .row { flex-wrap: nowrap; }
 .topbar .menu-btn { display: none; }
 
 .content { padding: 28px; max-width: 1440px; width: 100%; margin: 0 auto; }
@@ -226,7 +228,7 @@ code, pre, .mono { font-family: var(--font-mono); font-size: .92em; }
   transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease), transform var(--dur) var(--ease);
 }
 .card.interactive:hover { border-color: var(--border-strong); transform: translateY(-1px); box-shadow: var(--shadow-lg); }
-.card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
 .card-title { font-size: 14px; font-weight: 600; }
 .card-sub { font-size: 12.5px; color: var(--text-muted); margin-top: 2px; }
 .card.flush { padding: 0; overflow: hidden; }
@@ -428,6 +430,9 @@ details.disclosure > .body { padding: 0 14px 14px; animation: fade-in var(--dur)
 .status-dot.bad { background: var(--negative); }
 
 /* ------------------------------------------------------------------ Responsive */
+@media (max-width: 1280px) {
+  .topbar-controls .hide-md { display: none; }
+}
 @media (max-width: 1180px) {
   .cols-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -463,3 +468,36 @@ details.disclosure > .body { padding: 0 14px 14px; animation: fade-in var(--dur)
 :root[data-motion='reduce'] *, :root[data-motion='reduce'] *::before, :root[data-motion='reduce'] *::after {
   animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important;
 }
+
+/* ------------------------------------------------------------------ Auth screen */
+.auth-screen { position: relative; min-height: 100%; display: grid; place-items: center; padding: 24px 16px; }
+.auth-wrap { position: relative; z-index: 1; width: 100%; max-width: 420px; animation: page-in var(--dur-slow) var(--ease) both; }
+.auth-brand { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
+.auth-card { padding: 26px; box-shadow: var(--shadow-lg); }
+.auth-foot { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; margin-top: 16px; line-height: 1.5; }
+.auth-foot svg { flex: none; margin-top: 2px; }
+.link-btn { background: none; border: 0; padding: 0; font: inherit; color: var(--accent-strong); cursor: pointer; font-weight: 600; }
+.link-btn:hover { text-decoration: underline; }
+.splash { min-height: 100%; display: grid; place-items: center; }
+
+/* ------------------------------------------------------------------ Modal (native <dialog>) */
+dialog.modal {
+  border: 1px solid var(--border-strong); border-radius: var(--radius-lg); padding: 0; width: min(640px, calc(100vw - 32px));
+  background: var(--bg-elev); color: var(--text); box-shadow: var(--shadow-lg);
+}
+dialog.modal[open] { animation: toast-in var(--dur) var(--ease); }
+dialog.modal::backdrop { background: rgba(2, 6, 15, .5); }
+.modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--border); }
+.modal-body { padding: 16px 18px; max-height: min(70vh, 640px); overflow: auto; }
+.modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--border); }
+
+.user-chip { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-top: 1px solid var(--border); }
+.avatar { width: 30px; height: 30px; border-radius: 99px; display: grid; place-items: center; font-weight: 700; font-size: 13px; background: var(--accent-soft); color: var(--accent-strong); flex: none; }
+.timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.timeline li { display: grid; grid-template-columns: 12px 1fr; gap: 10px; padding: 8px 0; position: relative; font-size: 13px; }
+.timeline li::before { content: ''; width: 8px; height: 8px; border-radius: 99px; background: var(--accent); margin-top: 6px; box-shadow: 0 0 0 3px var(--accent-soft); }
+select.input.project-select { width: 190px; }
+@media (max-width: 640px) { select.input.project-select { width: 128px; } .topbar-title { display: none; } }
+/* checkbox/radio labels: keep the control beside its (possibly long) text */
+label.row:has(> input[type='checkbox']), label.row:has(> input[type='radio']) { flex-wrap: nowrap; align-items: flex-start; }
+label.row > input[type='checkbox'], label.row > input[type='radio'] { margin-top: 3px; flex: none; accent-color: var(--accent); }

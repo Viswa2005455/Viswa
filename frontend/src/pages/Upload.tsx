@@ -9,6 +9,8 @@ import { fmtBytes } from '../lib/format';
 import { useToast } from '../lib/toast';
 import type { UploadSummary } from '../lib/types';
 import { useAsync } from '../lib/useApi';
+import { useProjects } from '../lib/project';
+import { useAuth } from '../lib/auth';
 
 interface Analysis {
   kind: string; warnings?: string[]; sheets?: Sheet[]; text?: string; page_count?: number;
@@ -35,9 +37,11 @@ function iconFor(cat: string) {
 
 export function UploadPage() {
   const toast = useToast();
+  const { active, activeId } = useProjects();
+  const { user } = useAuth();
   const [params, setParams] = useSearchParams();
   const selected = params.get('file');
-  const list = useAsync(() => api.get<{ uploads: UploadSummary[]; }>('/api/uploads'), []);
+  const list = useAsync(() => api.get<{ uploads: UploadSummary[]; }>(`/api/uploads${activeId ? `?project_id=${activeId}` : ''}`), [activeId]);
   const formats = useAsync(() => api.get<{ max_upload_mb: number; max_files_per_request: number }>('/api/uploads/formats'), []);
   const [pending, setPending] = useState<Pending[]>([]);
   const [over, setOver] = useState(false);
@@ -54,7 +58,7 @@ export function UploadPage() {
       setPending((p) => [...p, { key, file, progress: 0, state: 'uploading' }]);
       try {
         const res = await uploadWithProgress<{ results: ({ ok: true; upload: UploadSummary } | { ok: false; error: string })[] }>(
-          '/api/uploads', [file], (f) => setPending((p) => p.map((x) => x.key === key ? { ...x, progress: f, state: f >= 1 ? 'processing' : 'uploading' } : x)));
+          '/api/uploads', [file], (f) => setPending((p) => p.map((x) => x.key === key ? { ...x, progress: f, state: f >= 1 ? 'processing' : 'uploading' } : x)), { project_id: activeId });
         const r = res.results[0];
         if (r.ok) {
           setPending((p) => p.filter((x) => x.key !== key));
@@ -68,7 +72,7 @@ export function UploadPage() {
       }
       list.reload();
     }
-  }, [list, maxMb, setParams, toast]);
+  }, [list, maxMb, setParams, toast, activeId]);
 
   const retry = (p: Pending) => { setPending((all) => all.filter((x) => x.key !== p.key)); send([p.file]); };
 
@@ -124,7 +128,9 @@ export function UploadPage() {
             </Card>
           )}
 
-          <Card title="Your files" subtitle="Stored on the local server. Delete removes the file and its analysis.">
+          <Card title={active ? `Files in ${active.name}` : 'All your files'}
+            subtitle={<>{active ? 'New uploads go into this project. ' : 'No project selected: showing every file; new uploads are not assigned to a project. '}
+              Files are private to your account and deleted automatically after {user?.retention_days ?? 90} days.</>}>
             {list.loading && !list.data ? <Skeleton h={80} /> : list.error ? <ErrorBox error={list.error} onRetry={list.reload} /> :
               !list.data?.uploads.length ? <EmptyState icon={<FileUp size={22} />} title="No files yet">Upload a file to get started.</EmptyState> : (
                 <div className="list">
@@ -147,7 +153,7 @@ export function UploadPage() {
         </div>
 
         <div className="span-2">
-          {selected ? <FileDetail id={selected} onDeleted={() => { setParams({}); list.reload(); }} onReplace={(f) => send([f])} /> : (
+          {selected ? <FileDetail id={selected} onDeleted={() => { setParams({}); list.reload(); }} onReplace={(f) => send([f])} onMoved={list.reload} /> : (
             <Card>
               <EmptyState icon={<FileSpreadsheet size={22} />} title="Select or upload a file">
                 You'll see a preview with worksheet and cell references, detected currencies, units and periods, data-quality warnings and
@@ -161,8 +167,9 @@ export function UploadPage() {
   );
 }
 
-function FileDetail({ id, onDeleted, onReplace }: { id: string; onDeleted: () => void; onReplace: (f: File) => void }) {
+function FileDetail({ id, onDeleted, onReplace, onMoved }: { id: string; onDeleted: () => void; onReplace: (f: File) => void; onMoved: () => void }) {
   const toast = useToast();
+  const { projects, reload: reloadProjects } = useProjects();
   const rec = useAsync(() => api.get<UploadRecord>(`/api/uploads/${id}`), [id]);
   const [tab, setTab] = useState<'preview' | 'details'>('preview');
   const replaceRef = useRef<HTMLInputElement>(null);
@@ -188,7 +195,7 @@ function FileDetail({ id, onDeleted, onReplace }: { id: string; onDeleted: () =>
   return (
     <div className="stack">
       <Card title={<span className="row">{u.name}<Badge tone="accent">{u.label}</Badge>{u.status === 'failed' && <Badge tone="neg">Failed</Badge>}</span>}
-        subtitle={`${fmtBytes(u.size)} · uploaded ${new Date(u.uploaded_at).toLocaleString()} · SHA-256 ${u.sha256.slice(0, 12)}…`}
+        subtitle={`${fmtBytes(u.size)} · uploaded ${new Date(u.uploaded_at).toLocaleString()}${u.expires_at ? ` · auto-deletes ${new Date(u.expires_at).toLocaleDateString()}` : ''} · SHA-256 ${u.sha256.slice(0, 12)}…`}
         actions={<>
           <button className="btn sm" onClick={() => replaceRef.current?.click()}><RefreshCw size={14} />Replace</button>
           <input ref={replaceRef} type="file" hidden onChange={async (e) => {
@@ -198,6 +205,14 @@ function FileDetail({ id, onDeleted, onReplace }: { id: string; onDeleted: () =>
             await api.del(`/api/uploads/${u.id}`).catch(() => {});
             onReplace(f);
           }} />
+          <select className="input compact" style={{ width: 170 }} aria-label="Project for this file" value={u.project_id ?? ''}
+            onChange={async (e) => {
+              try { await api.patch(`/api/uploads/${u.id}`, { project_id: e.target.value || null }); toast('File moved'); rec.reload(); reloadProjects(); onMoved(); }
+              catch (err) { toast((err as Error).message, 'error'); }
+            }}>
+            <option value="">No project</option>
+            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
           <button className="btn sm danger" onClick={del}><Trash2 size={14} />Delete</button>
         </>}>
         {u.error && <Callout tone="error" title="Could not process this file">{u.error}</Callout>}

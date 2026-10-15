@@ -8,7 +8,7 @@ export interface NavItem { to: string; label: string; icon: LucideIcon; ready: b
 /** `ready: false` marks modules that are clearly labelled "Under development" in the UI. */
 export const NAV: NavItem[] = [
   { to: '/', label: 'Overview', icon: LayoutDashboard, ready: true, group: 'Workspace' },
-  { to: '/projects', label: 'My Projects', icon: FolderKanban, ready: false, group: 'Workspace' },
+  { to: '/projects', label: 'My Projects', icon: FolderKanban, ready: true, group: 'Workspace' },
   { to: '/upload', label: 'Upload & Analyse', icon: UploadCloud, ready: true, group: 'Workspace' },
   { to: '/budgeting', label: 'Budgeting', icon: Wallet, ready: true, group: 'Planning' },
   { to: '/forecasting', label: 'Forecasting', icon: TrendingUp, ready: true, group: 'Planning' },

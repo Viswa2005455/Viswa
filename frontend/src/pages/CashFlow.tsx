@@ -2,6 +2,7 @@ import { Download, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { C, ChartTooltip, Legend, axisProps, gridProps } from '../components/charts';
+import { SaveLoad } from '../components/SaveLoad';
 import { Badge, Callout, Card, ErrorBox, Formula, Kpi, LearnBox, NumberField, PageHeader, Tabs, Warnings } from '../components/ui';
 import { api } from '../lib/api';
 import { downloadFile, fmtCompact, fmtMoney, fmtNum, isNum, toCSV } from '../lib/format';
@@ -112,6 +113,7 @@ function CashBudget() {
       <div className="row between">
         <div className="row">{s.isExample && <Badge tone="sample">Example data</Badge>}</div>
         <div className="row">
+          <SaveLoad kind="cash_budget" label="cash budget" getData={() => d} onLoad={(x: CBState) => set(x)} />
           <button className="btn" onClick={() => set(EXAMPLE, true)}><RotateCcw size={15} />Example</button>
           <button className="btn" onClick={exportCsv} disabled={!r}><Download size={15} />Export CSV</button>
         </div>

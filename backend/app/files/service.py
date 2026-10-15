@@ -1,25 +1,29 @@
-"""Upload orchestration: validate, store under a server-generated id, parse, recommend.
+"""Upload orchestration: validate, parse, recommend, store.
 
-Storage layout (local development; Phase 7 moves metadata to PostgreSQL):
-  storage/uploads/<id>.bin   original bytes (never named after the client filename)
-  storage/uploads/<id>.json  metadata + parsed analysis
+Storage:
+  PostgreSQL `uploads` table   metadata + parsed analysis, owned by one user (user_id)
+  storage/uploads/<uuid>.bin   original bytes, named only by the server-generated id
+
+Every read, list and delete is filtered by user_id. Uploads expire after the configured
+retention period (FIS_UPLOAD_RETENTION_DAYS) and are purged with their files.
 """
 
 from __future__ import annotations
 
 import datetime as dt
 import hashlib
-import json
-import threading
 import uuid
 from pathlib import Path
 
+from sqlalchemy import delete, select
+from sqlalchemy.orm import Session
+
 from ..config import Settings
+from ..db.models import Activity, AuthSession, Upload, utcnow
 from . import archive, documents, tabular
 from .detect import EXTENSIONS, detect, safe_display_name
 from .routing import recommend, suggest_statement_mapping, suggest_statements, suggest_variance_lines
 
-_lock = threading.Lock()
 ID_LEN = 32
 
 
@@ -110,7 +114,29 @@ def _summary(parsed: dict) -> str:
     return "Stored"
 
 
-def save_upload(filename: str, data: bytes, settings: Settings) -> dict:
+def file_path(settings: Settings, upload_id: uuid.UUID) -> Path:
+    return settings.upload_dir / f"{upload_id.hex}.bin"
+
+
+def parse_upload_id(upload_id: str) -> uuid.UUID:
+    # ids are server-generated hex; reject anything else so an id can never form a path
+    if len(upload_id) != ID_LEN or any(c not in "0123456789abcdef" for c in upload_id):
+        raise UploadError("Invalid upload id.")
+    return uuid.UUID(hex=upload_id)
+
+
+def summary_out(u: Upload) -> dict:
+    return {"id": u.id.hex, "name": u.name, "extension": u.extension, "category": u.category, "label": u.label, "size": u.size,
+            "uploaded_at": u.uploaded_at, "expires_at": u.expires_at, "status": u.status, "error": u.error, "summary": u.summary,
+            "recommendations": u.recommendations, "project_id": str(u.project_id) if u.project_id else None}
+
+
+def full_out(u: Upload) -> dict:
+    return {**summary_out(u), "sha256": u.sha256, "statement_mapping": u.statement_mapping, "variance_lines": u.variance_lines,
+            "statements": u.statements, "analysis": u.analysis}
+
+
+def save_upload(db: Session, user_id: uuid.UUID, project_id: uuid.UUID | None, filename: str, data: bytes, settings: Settings) -> Upload:
     if len(data) > settings.max_upload_bytes:
         raise UploadError(f"File exceeds the {settings.fis_max_upload_mb} MB limit.")
     if not data:
@@ -120,95 +146,104 @@ def save_upload(filename: str, data: bytes, settings: Settings) -> dict:
     if det.error:
         raise UploadError(det.error)
 
-    upload_id = uuid.uuid4().hex
-    record = {
-        "id": upload_id,
-        "name": name,
-        "extension": det.extension,
-        "category": det.category,
-        "label": det.label,
-        "size": len(data),
-        "sha256": hashlib.sha256(data).hexdigest(),
-        "uploaded_at": dt.datetime.now(dt.timezone.utc).isoformat(),
-        "status": "processed",
-        "error": None,
-    }
+    status, error = "processed", None
     try:
         parsed = _parse(name, det.extension, det.category, det.label, data, settings)
     except archive.UnsafeArchive as e:
         raise UploadError(str(e)) from e
     except Exception as e:
         parsed = {"kind": "error", "warnings": []}
-        record["status"] = "failed"
-        record["error"] = f"The file could not be parsed ({type(e).__name__}). It may be corrupt, password-protected or in an unexpected format."
+        status = "failed"
+        error = f"The file could not be parsed ({type(e).__name__}). It may be corrupt, password-protected or in an unexpected format."
 
-    record["summary"] = _summary(parsed) if record["status"] == "processed" else record["error"]
-    record["recommendations"] = recommend(det.category, parsed) if record["status"] == "processed" else []
-    record["statement_mapping"] = suggest_statement_mapping(parsed.get("sheets", []), name)
-    record["variance_lines"] = suggest_variance_lines(parsed.get("sheets", []), name)
-    record["statements"] = suggest_statements(parsed.get("sheets", []), name)
-    record["analysis"] = parsed
-
-    d = settings.upload_dir
-    with _lock:
-        d.mkdir(parents=True, exist_ok=True)
-        (d / f"{upload_id}.bin").write_bytes(data)
-        (d / f"{upload_id}.json").write_text(json.dumps(record, default=str))
-    return record
-
-
-def _path(upload_id: str, settings: Settings, suffix: str) -> Path:
-    # ids are server-generated hex; reject anything else so ids can never form a path
-    if len(upload_id) != ID_LEN or any(c not in "0123456789abcdef" for c in upload_id):
-        raise UploadError("Invalid upload id.")
-    return settings.upload_dir / f"{upload_id}{suffix}"
+    sheets = parsed.get("sheets", []) or []
+    now = utcnow()
+    u = Upload(
+        id=uuid.uuid4(), user_id=user_id, project_id=project_id, name=name, extension=det.extension, category=det.category,
+        label=det.label, size=len(data), sha256=hashlib.sha256(data).hexdigest(), status=status, error=error,
+        summary=_summary(parsed) if status == "processed" else error,
+        recommendations=recommend(det.category, parsed) if status == "processed" else [],
+        statement_mapping=suggest_statement_mapping(sheets, name), variance_lines=suggest_variance_lines(sheets, name),
+        statements=suggest_statements(sheets, name), analysis=_json_safe(parsed), uploaded_at=now,
+        expires_at=now + dt.timedelta(days=settings.fis_upload_retention_days),
+    )
+    settings.upload_dir.mkdir(parents=True, exist_ok=True)
+    file_path(settings, u.id).write_bytes(data)
+    db.add(u)
+    return u
 
 
-def get_upload(upload_id: str, settings: Settings) -> dict | None:
-    p = _path(upload_id, settings, ".json")
-    return json.loads(p.read_text()) if p.exists() else None
+def _json_safe(obj):
+    """Analysis must be JSON-serialisable for the database (dates -> ISO strings, NaN -> None)."""
+    import json
+    import math
+
+    def default(o):
+        if isinstance(o, (dt.date, dt.datetime, dt.time)):
+            return o.isoformat()
+        return str(o)
+
+    def clean(o):
+        if isinstance(o, float) and (math.isnan(o) or math.isinf(o)):
+            return None
+        if isinstance(o, dict):
+            return {str(k): clean(v) for k, v in o.items()}
+        if isinstance(o, list):
+            return [clean(v) for v in o]
+        return o
+
+    return json.loads(json.dumps(clean(obj), default=default))
 
 
-def list_uploads(settings: Settings) -> list[dict]:
-    d = settings.upload_dir
-    if not d.exists():
-        return []
-    items = []
-    for p in d.glob("*.json"):
-        try:
-            r = json.loads(p.read_text())
-        except json.JSONDecodeError:
-            continue
-        items.append({k: r.get(k) for k in ("id", "name", "extension", "category", "label", "size", "uploaded_at",
-                                            "status", "error", "summary", "recommendations")})
-    return sorted(items, key=lambda r: r["uploaded_at"], reverse=True)
+def get_upload(db: Session, user_id: uuid.UUID, upload_id: str) -> Upload | None:
+    uid = parse_upload_id(upload_id)
+    return db.scalar(select(Upload).where(Upload.id == uid, Upload.user_id == user_id))
 
 
-def delete_upload(upload_id: str, settings: Settings) -> bool:
-    removed = False
-    with _lock:
-        for suffix in (".json", ".bin"):
-            p = _path(upload_id, settings, suffix)
-            if p.exists():
-                p.unlink()
-                removed = True
-    return removed
+def list_uploads(db: Session, user_id: uuid.UUID, project_id: uuid.UUID | None = None, unassigned: bool = False) -> list[Upload]:
+    q = select(Upload).where(Upload.user_id == user_id)
+    if project_id:
+        q = q.where(Upload.project_id == project_id)
+    elif unassigned:
+        q = q.where(Upload.project_id.is_(None))
+    return list(db.scalars(q.order_by(Upload.uploaded_at.desc())).all())
 
 
-def all_series(settings: Settings) -> list[dict]:
-    """Every numeric series across uploads, with source references, for analysis pickers."""
+def delete_upload(db: Session, user_id: uuid.UUID, upload_id: str, settings: Settings) -> bool:
+    u = get_upload(db, user_id, upload_id)
+    if not u:
+        return False
+    db.delete(u)
+    file_path(settings, u.id).unlink(missing_ok=True)
+    return True
+
+
+def all_series(db: Session, user_id: uuid.UUID, project_id: uuid.UUID | None = None) -> list[dict]:
+    """Every numeric series across the user's uploads, with source references, for analysis pickers."""
     out = []
-    for item in list_uploads(settings):
-        rec = get_upload(item["id"], settings)
-        if not rec:
-            continue
-        for sheet in rec.get("analysis", {}).get("sheets", []) or []:
+    for rec in list_uploads(db, user_id, project_id):
+        for sheet in (rec.analysis or {}).get("sheets", []) or []:
             for s in sheet.get("series", []):
                 if len(s["values"]) < 3:
                     continue
                 first, last = s["refs"][0], s["refs"][-1]
-                out.append({"upload_id": rec["id"], "file": rec["name"], "sheet": sheet["name"], "series_id": s["id"],
+                out.append({"upload_id": rec.id.hex, "file": rec.name, "sheet": sheet["name"], "series_id": s["id"],
                             "label": s["label"], "orientation": s["orientation"], "values": s["values"],
                             "period_labels": s["period_labels"], "refs": s["refs"],
-                            "source": f"{rec['name']} › {sheet['name']} › {first}–{last}"})
+                            "source": f"{rec.name} › {sheet['name']} › {first}–{last}"})
     return out
+
+
+def purge_expired(db: Session, settings: Settings) -> dict:
+    """Retention: delete uploads past their expiry (and their files) and expired sessions."""
+    now = utcnow()
+    expired = db.scalars(select(Upload).where(Upload.expires_at <= now)).all()
+    for u in expired:
+        db.add(Activity(user_id=u.user_id, project_id=u.project_id, action="upload.expired", entity_type="upload",
+                        entity_id=u.id.hex, detail={"name": u.name}))
+        db.delete(u)
+    sessions = db.execute(delete(AuthSession).where(AuthSession.expires_at <= now)).rowcount
+    db.commit()
+    for u in expired:
+        file_path(settings, u.id).unlink(missing_ok=True)
+    return {"uploads_deleted": len(expired), "sessions_deleted": sessions or 0}
