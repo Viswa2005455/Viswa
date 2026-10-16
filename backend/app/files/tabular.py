@@ -12,6 +12,8 @@ from typing import Any
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 
+from .formula_eval import FormulaError, Unsupported, WorkbookEvaluator
+
 MAX_ROWS = 5000
 MAX_COLS = 200
 PREVIEW_ROWS = 60
@@ -72,9 +74,14 @@ def _header_row(grid: list[list[Any]]) -> int | None:
 
 
 def analyse_grid(name: str, grid: list[list[Any]], *, excel: bool, formulas: dict[tuple[int, int], str] | None = None,
-                 number_formats: dict[int, Counter] | None = None, truncated: bool = False) -> dict:
-    """Common analysis for one sheet / CSV. `grid` is row-major, 0-based."""
+                 number_formats: dict[int, Counter] | None = None, truncated: bool = False,
+                 calculated: set[tuple[int, int]] | None = None) -> dict:
+    """Common analysis for one sheet / CSV. `grid` is row-major, 0-based.
+
+    `calculated` holds the cells whose value was computed by formula_eval because the file had
+    no saved result for them."""
     formulas = formulas or {}
+    calculated = calculated or set()
     n_rows = len(grid)
     n_cols = max((len(r) for r in grid), default=0)
     grid = [list(r) + [None] * (n_cols - len(r)) for r in grid]
@@ -121,23 +128,25 @@ def analyse_grid(name: str, grid: list[list[Any]], *, excel: bool, formulas: dic
                     lab = grid[r][0] if c != 0 else None
                     labels.append(str(_jsonable(lab)) if not _is_blank(lab) else str(r + 1))
             series.append({"id": f"col:{c}", "label": col["name"], "orientation": "column", "values": vals,
-                           "refs": refs, "period_labels": labels})
+                           "refs": refs, "period_labels": labels,
+                           "calculated_values": sum(1 for r in range(data_start, n_rows) if (r, c) in calculated)})
     label_col = next((c["index"] for c in columns if c["dtype"] == "text"), None)
     if label_col is not None:
         for r in range(data_start, n_rows):
             label = grid[r][label_col]
             if _is_blank(label) or not isinstance(label, str):
                 continue
-            vals, refs, plabels = [], [], []
+            vals, refs, plabels, calc = [], [], [], 0
             for c in range(label_col + 1, n_cols):
                 v, _ = parse_number(grid[r][c])
                 if v is not None:
                     vals.append(v)
                     refs.append(ref(r, c))
                     plabels.append(headers[c])
+                    calc += (r, c) in calculated
             if len(vals) >= 2:
                 series.append({"id": f"row:{r}", "label": label.strip(), "orientation": "row", "values": vals,
-                               "refs": refs, "period_labels": plabels})
+                               "refs": refs, "period_labels": plabels, "calculated_values": calc})
             if len(series) >= 300:
                 break
 
@@ -150,10 +159,16 @@ def analyse_grid(name: str, grid: list[list[Any]], *, excel: bool, formulas: dic
         warnings.append("Some numbers are stored as text and were converted; please confirm them.")
     if hdr is None and n_rows:
         warnings.append("No header row detected; generic column names were used.")
-    missing_formula_cache = sum(1 for (r, c) in formulas if r < n_rows and _is_blank(grid[r][c]))
+    if calculated:
+        examples = ", ".join(ref(r, c) for r, c in sorted(calculated)[:3])
+        warnings.append(f"{len(calculated)} formula result(s) were not saved in the file, so Finance Intelligence "
+                        f"Studio calculated them (e.g. {examples}; shown highlighted). Check a few against Excel "
+                        "before relying on them.")
+    missing_formula_cache = sum(1 for (r, c) in formulas if r < n_rows and c < n_cols and _is_blank(grid[r][c]))
     if missing_formula_cache:
-        warnings.append(f"{missing_formula_cache} formula cell(s) have no cached result. The workbook needs to be "
-                        "recalculated in Excel or LibreOffice before these values can be used.")
+        warnings.append(f"{missing_formula_cache} formula cell(s) have no result and could not be calculated here, so "
+                        "they are left blank (not treated as zero). Open the file in Excel or LibreOffice, save it, "
+                        "and upload it again to include them.")
 
     preview_rows = [[_jsonable(v) for v in row] for row in grid[:PREVIEW_ROWS]]
     return {
@@ -166,6 +181,8 @@ def analyse_grid(name: str, grid: list[list[Any]], *, excel: bool, formulas: dic
         "formula_count": len(formulas),
         "formula_samples": [{"cell": ref(r, c), "formula": f} for (r, c), f in list(formulas.items())[:20]],
         "formulas_without_cached_value": missing_formula_cache,
+        "formulas_calculated": len(calculated),
+        "calculated_cells": [ref(r, c) for r, c in sorted(calculated) if r < PREVIEW_ROWS],
         "duplicate_rows": duplicates,
         "series": series,
         "warnings": warnings,
@@ -175,7 +192,7 @@ def analyse_grid(name: str, grid: list[list[Any]], *, excel: bool, formulas: dic
 def parse_xlsx(data: bytes) -> dict:
     wb_f = load_workbook(io.BytesIO(data), read_only=True, data_only=False)
     wb_v = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
-    sheets = []
+    raw = []  # (title, grid, formulas, number formats, truncated)
     try:
         for ws_f in wb_f.worksheets:
             ws_v = wb_v[ws_f.title]
@@ -201,16 +218,51 @@ def parse_xlsx(data: bytes) -> dict:
                 grid.append(vals)
             if ws_f.max_column and ws_f.max_column > MAX_COLS:
                 truncated = True
-            # trim trailing empty rows and columns (read-only mode pads rows to max_col)
-            while grid and all(_is_blank(v) for v in grid[-1]):
-                grid.pop()
-            width = max((max((i + 1 for i, v in enumerate(row) if not _is_blank(v)), default=0) for row in grid), default=0)
-            grid = [row[:width] for row in grid]
-            sheets.append(analyse_grid(ws_f.title, grid, excel=True, formulas=formulas, number_formats=fmts, truncated=truncated))
+            raw.append((ws_f.title, grid, formulas, fmts, truncated))
     finally:
         wb_f.close()
         wb_v.close()
+
+    computed = _calculate_missing_results(raw)
+    sheets = []
+    for title, grid, formulas, fmts, truncated in raw:
+        results = computed.get(title, {})
+        for (r, c), v in results.items():
+            grid[r][c] = v
+        # Trim trailing empty rows and columns (read-only mode pads rows to max_col), but never
+        # cut off a cell that holds a formula, even when it has no value.
+        keep_rows = max((r + 1 for r, _ in formulas), default=0)
+        while len(grid) > keep_rows and all(_is_blank(v) for v in grid[-1]):
+            grid.pop()
+        width = max((max((i + 1 for i, v in enumerate(row) if not _is_blank(v)), default=0) for row in grid), default=0)
+        width = max([width] + [c + 1 for r, c in formulas if r < len(grid)])
+        grid = [row[:width] for row in grid]
+        sheets.append(analyse_grid(title, grid, excel=True, formulas=formulas, number_formats=fmts, truncated=truncated,
+                                   calculated={k for k in results if k[0] < len(grid)}))
     return {"kind": "tabular", "sheets": sheets}
+
+
+def _calculate_missing_results(raw: list) -> dict[str, dict[tuple[int, int], Any]]:
+    """Compute formula cells that have no saved result, across all sheets.
+
+    Returns {sheet: {(row, col): value}}. Cells whose formula is unsupported, or whose result is
+    an Excel error, are left out, so they stay blank rather than becoming a made-up number."""
+    ev = WorkbookEvaluator({t: g for t, g, *_ in raw}, {t: f for t, _, f, *_ in raw})
+    out: dict[str, dict[tuple[int, int], Any]] = {}
+    for title, grid, formulas, _, _ in raw:
+        for (r, c) in sorted(formulas):
+            if r >= len(grid) or c >= len(grid[r]) or not _is_blank(grid[r][c]):
+                continue
+            try:
+                v = ev.cell(title, r, c)
+            except (Unsupported, FormulaError, RecursionError):
+                continue
+            if isinstance(v, FormulaError) or _is_blank(v):
+                continue
+            if isinstance(v, float) and (v != v or v in (float("inf"), float("-inf"))):
+                continue
+            out.setdefault(title, {})[(r, c)] = v
+    return out
 
 
 def parse_xls(data: bytes) -> dict:

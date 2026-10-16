@@ -108,8 +108,11 @@ def test_upload_xlsx_detects_formulas_mapping_and_variance(client):
 
     full = client.get(f"/api/uploads/{up['id']}").json()
     pl = full["analysis"]["sheets"][0]
-    assert pl["formula_count"] == 1 and pl["formulas_without_cached_value"] == 1
-    assert any("recalculated" in w for w in pl["warnings"])
+    # openpyxl saves no formula results, so the app calculates D2 itself and says so
+    assert pl["formula_count"] == 1 and pl["formulas_without_cached_value"] == 0
+    assert pl["formulas_calculated"] == 1 and pl["calculated_cells"] == ["D2"]
+    assert pl["preview"]["rows"][1][3] == pytest.approx(0.2)
+    assert any("calculated them" in w for w in pl["warnings"])
 
     series = client.get("/api/uploads/series").json()["series"]
     assert any(s["label"] == "Revenue" and s["refs"] == ["B2", "C2"] for s in series) is False  # rows need 3+ values

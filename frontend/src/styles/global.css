@@ -327,6 +327,8 @@ table.data { width: 100%; border-collapse: collapse; font-size: 13px; font-varia
 table.data th, table.data td { padding: 8px 12px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
 table.data th { position: sticky; top: 0; background: var(--bg-sunken); font-weight: 600; font-size: 12px; color: var(--text-muted); z-index: 1; }
 table.data td.r, table.data th.r { text-align: right; }
+table.data td.calculated { background: var(--warning-soft); box-shadow: inset 2px 0 0 var(--warning); }
+.calculated-key { display: inline-block; width: 12px; height: 12px; vertical-align: -1px; border-radius: 3px; background: var(--warning-soft); box-shadow: inset 2px 0 0 var(--warning); }
 table.data tbody tr { transition: background var(--dur-fast); }
 table.data tbody tr:hover { background: var(--bg-hover); }
 table.data tr:last-child td { border-bottom: 0; }

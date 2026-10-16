@@ -2,7 +2,7 @@
 
 This file is the source of truth for progress. Update it at the end of every working session so development can resume reliably.
 
-_Last updated: 2026-10-15 (session 3)_
+_Last updated: 2026-10-16 (session 5)_
 
 ## Environment found at the start
 
@@ -23,6 +23,20 @@ _Last updated: 2026-10-15 (session 3)_
 | 6. AI & reports | AI assistant, Excel/PDF/Word report generation | ⏳ Not started (provider abstraction, status endpoint and CSV exports exist) |
 | 7. Persistence & security | Accounts (scrypt, server-side sessions, CSRF/origin check, rate limits), PostgreSQL + Alembic, projects, saved models with versions, history, per-user isolation, retention purge, export and deletion | ✅ Done |
 | 8. Final QA | Full accessibility audit, performance, deployment hardening | ⏳ Ongoing per phase |
+
+## Session 5: Excel files without saved formula results
+
+- Fixed a reported upload failure ("The file could not be parsed (IndexError)") on an Excel export (TCS.xlsx). Some exports, such as Screener.in-style workbooks or files written by scripts, store formulas without saved results. The parser trimmed those apparently empty formula columns and then indexed past the edge.
+- Formula cells are no longer trimmed.
+- New `backend/app/files/formula_eval.py`: a safe, hand-written calculator for common formulas.
+  - Supports cell references (including other sheets), arithmetic, comparisons, `&`, and SUM, AVERAGE, MIN, MAX, COUNT, IF, IFERROR, ROUND and similar.
+  - No `eval`/`exec`.
+  - Depth, cell-count and range limits; circular references are detected.
+  - Calculated cells are highlighted and labelled "calculated by the app" with a warning to verify them in Excel.
+  - Errors (e.g. `#DIV/0!`) and unsupported functions stay blank, never zero.
+- Statement mapping now ignores non-period columns such as "Growth" when picking the latest and prior year.
+- 145 backend tests pass on PostgreSQL (8 new). Frontend typecheck, tests and build pass. A browser check with a Screener-style workbook showed 11 highlighted cells and no console errors.
+- The user's actual TCS.xlsx was not available here, so the fix was tested on a reconstructed workbook.
 
 ## Session 4: one-click local start
 
@@ -76,7 +90,7 @@ _Last updated: 2026-10-15 (session 3)_
   - No email verification, password reset by email, or MFA.
   - Rate limits are in memory, per process.
 - Uploads: the original bytes stay on local disk, so multiple servers would need shared storage (e.g. S3).
-- Excel formulas are detected, but the app does not recalculate them. Cells without a cached value are flagged (LibreOffice could be used for recalculation in the future).
+- Excel formulas without saved results are recalculated only for common functions (see `formula_eval.py`). Lookups (VLOOKUP, XLOOKUP, INDEX/MATCH), whole-column ranges and date functions are left blank and reported. Full recalculation via LibreOffice is a possible future step.
 - PDF table extraction uses pdfplumber and can misalign columns, so the app warns you to confirm figures. Scanned PDFs need OCR, which is not configured.
 - Legacy `.doc` files are not parsed (the app asks you to save them as `.docx`). `.mat` files are stored but not previewed.
 - Forecasting does not model seasonality yet.

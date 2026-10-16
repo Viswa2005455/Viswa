@@ -72,6 +72,13 @@ def suggest_statement_mapping(sheets: list[dict], file_name: str) -> list[dict]:
             if not key or key in found or key not in ITEMS:
                 continue
             vals, refs, periods = s["values"], s["refs"], s["period_labels"]
+            # Ignore non-period columns such as "Growth" or "% of sales" when the row has periods.
+            keep = [i for i, p in enumerate(periods) if is_period_label(p)]
+            if keep:
+                vals, refs, periods = [vals[i] for i in keep], [refs[i] for i in keep], [periods[i] for i in keep]
+                years = [_period_year(p) for p in periods]
+                if len(years) > 1 and all(y is not None for y in years) and years == sorted(years, reverse=True) and years[0] != years[-1]:
+                    vals, refs, periods = vals[::-1], refs[::-1], periods[::-1]  # newest-first -> oldest-first
             found[key] = {
                 "item": key, "item_label": ITEMS[key], "source_label": s["label"],
                 "value": vals[-1], "source": f"{file_name} › {sheet['name']} › {refs[-1]}", "period": periods[-1],
@@ -216,8 +223,10 @@ def suggest_statements(sheets: list[dict], file_name: str) -> list[dict]:
             continue
         periods = [c["name"] for c in sheet.get("columns", []) if c["dtype"] == "number"]
         periods = [p for p in periods if any(p in r["period_labels"] for r in rows)]
-        if len(periods) < 1 or not all(is_period_label(p) for p in periods):
-            continue  # e.g. Budget/Actual columns are not reporting periods
+        # Keep only reporting-period columns; "Growth" or "Budget/Actual" columns are not periods.
+        periods = [p for p in periods if is_period_label(p)]
+        if not periods:
+            continue
         years = [_period_year(p) for p in periods]
         reversed_ = all(y is not None for y in years) and len(years) > 1 and years == sorted(years, reverse=True) and years[0] != years[-1]
         if reversed_:

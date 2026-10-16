@@ -6,6 +6,7 @@ export interface Sheet {
   columns: { index: number; letter: string; name: string; dtype: string; missing: number; numeric: number; numbers_stored_as_text: number; number_format?: string }[];
   preview: { rows: (string | number | null)[][]; column_letters: string[] };
   formula_count: number; formula_samples: { cell: string; formula: string }[]; formulas_without_cached_value: number;
+  formulas_calculated?: number; calculated_cells?: string[];
   duplicate_rows: number; warnings: string[]; source?: { page?: number; table?: number };
 }
 
@@ -14,6 +15,7 @@ export function SheetPreview({ sheets, excel }: { sheets: Sheet[]; excel: boolea
   const [idx, setIdx] = useState(0);
   const sheet = sheets[Math.min(idx, sheets.length - 1)];
   if (!sheet) return null;
+  const calculated = new Set(sheet.calculated_cells ?? []);
   return (
     <div className="stack">
       {sheets.length > 1 && (
@@ -28,6 +30,7 @@ export function SheetPreview({ sheets, excel }: { sheets: Sheet[]; excel: boolea
         <Badge>{sheet.n_rows.toLocaleString()} rows × {sheet.n_cols} cols</Badge>
         {sheet.header_row && <Badge>Header row {sheet.header_row}</Badge>}
         {excel && <Badge tone={sheet.formula_count ? 'info' : undefined}>{sheet.formula_count} formulas</Badge>}
+        {!!sheet.formulas_calculated && <Badge tone="warn">{sheet.formulas_calculated} calculated by the app</Badge>}
         {sheet.duplicate_rows > 0 && <Badge tone="warn">{sheet.duplicate_rows} duplicate rows</Badge>}
         {sheet.source?.page && <Badge>Source: page {sheet.source.page}</Badge>}
       </div>
@@ -41,15 +44,23 @@ export function SheetPreview({ sheets, excel }: { sheets: Sheet[]; excel: boolea
             {sheet.preview.rows.map((r, i) => (
               <tr key={i} style={sheet.header_row === i + 1 ? { fontWeight: 650 } : undefined}>
                 <td className="rownum">{i + 1}</td>
-                {sheet.preview.column_letters.map((_, c) => {
+                {sheet.preview.column_letters.map((l, c) => {
                   const v = r[c];
-                  return <td key={c} className={typeof v === 'number' ? 'r' : ''}>{v === null || v === undefined ? '' : String(v)}</td>;
+                  const calc = calculated.has(`${l}${i + 1}`);
+                  const cls = [typeof v === 'number' ? 'r' : '', calc ? 'calculated' : ''].filter(Boolean).join(' ');
+                  return (
+                    <td key={c} className={cls || undefined}
+                      title={calc ? 'Calculated by Finance Intelligence Studio: the file had no saved result for this formula. Verify in Excel.' : undefined}>
+                      {v === null || v === undefined ? '' : String(v)}
+                    </td>
+                  );
                 })}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      {calculated.size > 0 && <div className="faint" style={{ fontSize: 12 }}><span className="calculated-key" /> Highlighted cells were calculated by the app.</div>}
       {sheet.n_rows > sheet.preview.rows.length && <div className="faint" style={{ fontSize: 12 }}>Showing the first {sheet.preview.rows.length} rows.</div>}
       <details className="disclosure">
         <summary>Column profile</summary>
