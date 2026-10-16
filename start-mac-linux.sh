@@ -40,9 +40,22 @@ echo "[3/5] Installing backend packages (the first time takes a few minutes)..."
 echo "[4/5] Preparing the database..."
 (cd backend && uv run alembic upgrade head)
 
-if [ ! -d frontend/node_modules ]; then
-  echo "[5/5] Installing website packages (the first time takes a few minutes)..."
-  (cd frontend && npm install)
+# The marker is written only after a complete install, so an interrupted download is retried.
+if [ ! -f frontend/node_modules/.fis-installed ]; then
+  for attempt in 1 2 3 4; do
+    echo "[5/5] Installing website packages - attempt $attempt of 4 (the first time takes a few minutes)..."
+    if (cd frontend && npm install); then
+      touch frontend/node_modules/.fis-installed
+      break
+    fi
+    if [ "$attempt" = 4 ]; then
+      echo "Installing the website packages failed: the internet connection kept dropping."
+      echo "Try another network (e.g. a phone hotspot), pause any VPN, then run this script again."
+      exit 1
+    fi
+    echo "The connection dropped during the download. Retrying in 15 seconds..."
+    sleep 15
+  done
 else
   echo "[5/5] Website packages are installed."
 fi

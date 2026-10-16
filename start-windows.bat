@@ -56,13 +56,14 @@ if errorlevel 1 goto :fail_db
 popd
 
 rem ---------------------------------------------------------------- 5. frontend
+rem A marker file is written only after a complete install, so an interrupted download
+rem is never mistaken for a finished one.
 pushd frontend
-if not exist node_modules (
-  echo [5/5] Installing website packages. The first time takes a few minutes...
-  call npm install
-  if errorlevel 1 goto :fail_frontend
-) else (
+if exist "node_modules\.fis-installed" (
   echo [5/5] Website packages are installed.
+) else (
+  call :npm_install
+  if errorlevel 1 goto :fail_frontend
 )
 popd
 
@@ -86,6 +87,23 @@ echo ==============================================================
 pause
 exit /b 0
 
+rem ---------------------------------------------------------------- npm install with retries
+:npm_install
+set /a NPM_TRY=0
+:npm_retry
+set /a NPM_TRY+=1
+echo [5/5] Installing website packages - attempt %NPM_TRY% of 4. The first time takes a few minutes...
+call npm install
+if not errorlevel 1 (
+  echo ok> "node_modules\.fis-installed"
+  exit /b 0
+)
+if %NPM_TRY% GEQ 4 exit /b 1
+echo.
+echo The internet connection dropped during the download. Retrying in 15 seconds...
+timeout /t 15 /nobreak >nul
+goto :npm_retry
+
 :fail_uv
 echo.
 echo Could not install uv. Close this window, restart the computer, and double-click this file again.
@@ -105,7 +123,9 @@ echo Preparing the database failed. If you set DATABASE_URL in backend\.env, che
 goto :end
 :fail_frontend
 echo.
-echo Installing the website packages failed. Check your internet connection and try again.
+echo Installing the website packages failed after 4 attempts because the internet connection kept dropping.
+echo Try this: switch to a different network, e.g. your phone's hotspot; pause any VPN;
+echo then double-click this file again. It continues where it stopped.
 goto :end
 :end
 echo If this keeps happening, send a screenshot of this window.
