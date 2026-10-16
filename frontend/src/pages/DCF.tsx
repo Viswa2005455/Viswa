@@ -1,4 +1,4 @@
-import { ArrowRight, RotateCcw } from 'lucide-react';
+import { ArrowRight, Bot, RotateCcw } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -55,6 +55,7 @@ export function DCF() {
         actions={<>
           <SaveLoad kind="dcf" label="DCF model" getData={() => model} onLoad={(m) => setModel(m)} />
           <button className="btn" onClick={reset}><RotateCcw size={15} />Reset to example</button>
+          <Link className="btn" to="/assistant?topic=dcf"><Bot size={15} />Challenge with AI</Link>
           <Link className="btn" to="/sensitivity">Sensitivity <ArrowRight size={15} /></Link>
         </>} />
       {isExample && <div style={{ marginBottom: 16 }}><Callout tone="warn">The default inputs are illustrative examples, not verified market data. Replace them with your own assumptions and sources.</Callout></div>}

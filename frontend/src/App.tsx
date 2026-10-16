@@ -4,7 +4,7 @@ import { Layout } from './components/Layout';
 import { DCFModelProvider } from './lib/dcfModel';
 import { SettingsProvider } from './lib/settings';
 import { ToastProvider } from './lib/toast';
-import { CodeLab, Assistant, Reports } from './pages/Planned';
+import { CodeLab, Reports } from './pages/Planned';
 import { AuthProvider, useAuth } from './lib/auth';
 import { ProjectProvider } from './lib/project';
 import { AuthScreen } from './pages/Auth';
@@ -29,6 +29,7 @@ const Projects = lazy(() => import('./pages/Projects').then((m) => ({ default: m
 const RedFlags = lazy(() => import('./pages/RedFlags').then((m) => ({ default: m.RedFlags })));
 const ModelCheck = lazy(() => import('./pages/ModelCheck').then((m) => ({ default: m.ModelCheck })));
 const Peers = lazy(() => import('./pages/Peers').then((m) => ({ default: m.Peers })));
+const Assistant = lazy(() => import('./pages/Assistant').then((m) => ({ default: m.Assistant })));
 const SettingsPage = lazy(() => import('./pages/Settings').then((m) => ({ default: m.SettingsPage })));
 
 export function App() {

@@ -34,7 +34,7 @@ class Settings(BaseSettings):
 
     fis_ai_provider: str = "none"
     anthropic_api_key: SecretStr | None = None
-    fis_ai_model: str = "claude-sonnet-5-5"
+    fis_ai_model: str = "claude-opus-5-5"
 
     @property
     def resolved_database_url(self) -> str:

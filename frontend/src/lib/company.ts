@@ -3,7 +3,7 @@ import { api } from './api';
 import { loadRaw } from './storage';
 
 /** Statement data as saved by the Financial Statements page. */
-export interface StatementData { periods: string[]; lines: { label: string; statement: string; key: string | null; values: (number | null)[] }[] }
+export interface StatementData { periods: string[]; lines: { label: string; statement: string; key: string | null; values: (number | null)[]; source?: string | null }[] }
 export interface CompanyData { periods: string[]; items: Record<string, (number | null)[]> }
 export interface CompanySource { id: string; name: string; isExample: boolean; load: () => Promise<StatementData> }
 

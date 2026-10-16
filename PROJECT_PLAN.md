@@ -2,7 +2,7 @@
 
 This file is the source of truth for progress. Update it at the end of every working session so development can resume reliably.
 
-_Last updated: 2026-10-16 (session 5, update 2)_
+_Last updated: 2026-10-16 (session 6)_
 
 ## Environment found at the start
 
@@ -20,9 +20,34 @@ _Last updated: 2026-10-16 (session 5, update 2)_
 | 3. Core analysis | Forecasting ✅, Variance ✅, Ratios ✅, Budgeting ✅, Financial Statements ✅, Cash Flow & Working Capital ✅ | ✅ Done |
 | 4. Advanced finance | Scenarios ✅, Sensitivity (2-way, 1-way, tornado, break-even) ✅, DCF ✅, WACC/CAPM ✅, NPV/IRR/MIRR/payback/PI/EAA ✅ | ✅ Done |
 | 5. Data & Code Lab | Editor, explanations, sandboxed execution | ⏳ Not started (uploads already provide syntax checks and outlines) |
-| 6. AI & reports | AI assistant, Excel/PDF/Word report generation | ⏳ Not started (provider abstraction, status endpoint and CSV exports exist) |
+| 6. AI & reports | AI assistant ✅ (Claude Opus 5.5 with finance tools, consent per question), Excel/PDF/Word report generation ⏳ | 🟡 Partly done (assistant done; report exports not started; the AI can draft a report as text) |
 | 7. Persistence & security | Accounts (scrypt, server-side sessions, CSRF/origin check, rate limits), PostgreSQL + Alembic, projects, saved models with versions, history, per-user isolation, retention purge, export and deletion | ✅ Done |
 | 8. Final QA | Full accessibility audit, performance, deployment hardening | ⏳ Ongoing per phase |
+
+## Session 6: unique analysis features and the AI assistant (v0.8.0)
+
+- **Red-Flag Detector** (`app/finance/forensic.py`):
+  - Beneish M-score; uses the 5-variable model when SG&A, leverage or accruals inputs are missing, and says so.
+  - Altman Z and Z''; Piotroski F-score reported as "x of y tests"; cash-quality warnings.
+  - Undefined components (zero denominators) are explained, not filled in.
+- **Excel Model Checker** (`app/files/model_check.py`):
+  - Finds error values, #REF!, external links and missing sheets.
+  - Detects circular references (Tarjan's algorithm), typed constants inside formulas (structural arguments such as ROUND's digits are ignored), formulas inconsistent with both neighbours, values typed over formula rows, balance-sheet mismatches and hidden sheets.
+- **Peer Comparison** (`app/finance/peers.py`): 24 metrics with direction-aware ranks (ties share a rank), medians, and warnings when years or tested metrics differ.
+- **Reverse DCF and Monte Carlo** (`app/finance/valuation_range.py`):
+  - Reverse DCF scans, then bisects, for growth, margin, WACC, terminal growth or exit multiple.
+  - Monte Carlo is seeded and reproducible; invalid draws are counted and excluded; 5,000 runs take about 0.2 s.
+- **AI Finance Assistant** (`app/ai/assistant.py`, `app/api/ai.py`, `pages/Assistant.tsx`):
+  - Claude Opus 5.5 via the official Anthropic SDK, with `fallbacks: "default"` and prompt caching.
+  - Seven tools call the tested engines; modes: ask, red flags, model check, challenge my DCF, peers, CMA tutor, report draft.
+  - Consent is required per question and resets after each; attachments are framed as data; replies are rendered as safe text; there is a cost estimate per answer.
+- Number style setting (Indian or international grouping); new statement items (SG&A, other income, share capital, reserves, long-term debt) with Screener-style label matching.
+- **Verified:**
+  - 184 backend tests pass on PostgreSQL. AI tests use a fake client, so no paid API calls were made.
+  - 8 frontend tests pass; typecheck and build are clean.
+  - Browser check: all 21 pages in dark and light themes with no console errors; the new pages fit phone width.
+  - End-to-end AI check through the real Anthropic SDK against a local stand-in server confirmed the request shape (model, fallbacks beta, tools, cache control, consented attachments), tool execution and safe rendering of a `<script>` in a reply.
+- **Not verified:** no call to the real Claude API was made (no key here). The first real question on the user's machine is its live test.
 
 ## Session 5: Excel files without saved formula results
 
@@ -111,13 +136,11 @@ _Last updated: 2026-10-16 (session 5, update 2)_
 
 ## Next steps (in order)
 
-1. **Phase 5: Data & Code Lab.**
+1. **Phase 6 remainder: Reports & Exports.** Excel (live formulas), PDF and Word exports of analyses and of the AI report draft.
+2. **Phase 5: Data & Code Lab.**
    - Editor with a diff view.
    - Python/SQL/Java explanations.
    - Docker-based sandbox execution with no network, CPU/memory/time/output limits, and explicit approval for every run.
-2. **Phase 6: AI assistant and reports.**
-   - AI assistant through the provider abstraction in `backend/app/ai/`, with tool-calling into `app.finance`, consent for each request, and source citations.
-   - Report builder with Excel (live formulas), PDF and Word exports, stored as report versions in projects.
 3. **Phase 8: hardening.**
    - PostgreSQL row-level security, a shared rate limiter, password reset by email, and MFA.
    - Full WCAG 2.1 AA audit, a performance budget, a deployment guide with HTTPS, and a dependency audit in CI.

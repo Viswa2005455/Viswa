@@ -25,7 +25,7 @@ export const NAV: NavItem[] = [
   { to: '/investment', label: 'Investment Appraisal', icon: Calculator, ready: true, group: 'Valuation & risk' },
   { to: '/model-check', label: 'Excel Model Checker', icon: FileSearch, ready: true, group: 'Tools' },
   { to: '/code-lab', label: 'Data & Code Lab', icon: Code2, ready: false, group: 'Tools' },
-  { to: '/assistant', label: 'AI Finance Assistant', icon: Bot, ready: false, group: 'Tools' },
+  { to: '/assistant', label: 'AI Finance Assistant', icon: Bot, ready: true, group: 'Tools' },
   { to: '/reports', label: 'Reports & Exports', icon: FileText, ready: false, group: 'Tools' },
   { to: '/learn', label: 'Learning Centre', icon: GraduationCap, ready: true, group: 'Learn' },
   { to: '/settings', label: 'Settings', icon: SettingsIcon, ready: true, group: 'Learn' },

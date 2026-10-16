@@ -16,7 +16,7 @@ A financial analysis workspace for FP&A, valuation and learning. You can upload 
 | **Overview** | KPI cards, revenue forecast with prediction interval, budget vs actual, health ratios. Uses a clearly labelled **fictional sample company**. |
 | **Upload & Analyse** | Drag-and-drop multiple files: Excel (`.xlsx` `.xlsm` `.xls`), CSV/TSV, PDF, Word (`.docx`), text, JSON/XML/YAML/TOML, notebooks, Python/SQL/Java/JS/TS/R/SAS and more, plus safe ZIP inspection. You get previews with cell references, formula detection, data-quality warnings, detected currency/units/periods, and recommended analyses. |
 | **Investment Appraisal** | NPV, IRR (detects multiple IRRs and cases with no IRR), MIRR, payback, discounted payback, PI, EAA, NPV profile, step-by-step table. |
-| **DCF Valuation** | Driver-based FCFF model, Gordon growth or exit multiple, mid-year option, WACC/CAPM builder, valuation bridge, full projection table. |
+| **DCF Valuation** | Driver-based FCFF model, Gordon growth or exit multiple, mid-year option, WACC/CAPM builder, valuation bridge, full projection table. **Reverse DCF** finds the growth, margin, WACC or terminal value that today's market price implies. **Valuation range (Monte Carlo)** runs thousands of DCFs with uncertain assumptions and shows P10/P50/P90 and the chance the value exceeds the market price. |
 | **Scenario Planning** | Base, optimistic, pessimistic and custom scenarios on the DCF model. Includes a comparison table, charts, driver attribution and CSV export. |
 | **Sensitivity Analysis** | Two-variable heatmap, one-variable chart, tornado chart and break-even solver. Every cell re-runs the model. |
 | **Forecasting** | Linear trend, exponential smoothing, moving average and CAGR. Shows prediction intervals and holdout backtest metrics (MAE, RMSE, MAPE). Can use series from your uploads. |
@@ -24,9 +24,13 @@ A financial analysis workspace for FP&A, valuation and learning. You can upload 
 | **Financial Statements** | Multi-period income statement, balance sheet and cash flow. Includes horizontal analysis (Δ, Δ%, CAGR), common-size analysis, derived metrics (margins, FCF, NWC, cash conversion, accruals ratio, CapEx/D&A), reconciliation checks (A = L + E, cash roll-forward and more) and earnings-quality indicators. Can import sheets from uploads, including annual reports that list years newest-first. |
 | **Cash Flow & Working Capital** | Monthly cash budget with a minimum balance and automatic financing need, runway, receipts vs payments, and working-capital targets (DSO/DIO/DPO) showing how much cash they release. |
 | **Variance Analysis** | Budget vs actual with favourable/adverse logic, materiality, a profit bridge (waterfall), largest contributors, price/volume split, and import from uploads. |
+| **Red-Flag Detector** | Beneish M-score (8- or 5-variable), Altman Z and Z'' scores, Piotroski F-score and cash-quality warnings (profit not turning into cash, receivables or inventory outgrowing sales, rising debt, large other income, low interest cover). Every score shows its formula, parts and inputs. Missing inputs are reported, never treated as zero. |
+| **Peer Comparison** | Compare 2–12 saved companies on growth, margins, ROE/ROA/ROCE, efficiency, cash quality, safety, red-flag scores and valuation (with market cap), with ranks, medians and comparability warnings. |
+| **Excel Model Checker** | Checks your own Excel models for error values, #REF!, links to other files, missing sheets, circular references, numbers typed inside formulas, inconsistent formulas, values typed over formula rows, balance sheets that do not balance and hidden sheets. Formulas are read, never run. |
+| **AI Finance Assistant** | Optional, on Claude Opus 5.5 (needs your own Anthropic API key). Ask about your data, get red flags and model-check issues explained, have your DCF challenged, get peer insights, a CMA tutor, or a report draft. Every number comes from the app's calculators, which the AI calls as tools, and you consent before each question is sent. |
 | **Ratio Analysis** | 29 ratios (liquidity, profitability, efficiency, leverage, valuation). Each shows its formula, inputs, steps and interpretation, and uses average balances when available. Can import statement lines from uploads after you confirm them. |
 | **Learning Centre** | 12 topics with formulas, worked examples, common mistakes and practice questions (PGDM / CMA level). |
-| **Settings** | Change your password and see signed-in devices (with "sign out other devices"). Export all your data, delete it, or delete your account. Also: light/dark/system theme, reduced motion, learning mode and AI provider status. |
+| **Settings** | Change your password and see signed-in devices (with "sign out other devices"). Export all your data, delete it, or delete your account. Also: light/dark/system theme, Indian (1,23,45,678) or international number style, reduced motion, learning mode and AI provider status. |
 
 ---
 
@@ -115,6 +119,13 @@ Open **http://localhost:5173** and click **Create an account**. Your account exi
 ### 5. Optional: configuration
 
 Copy `.env.example` to `backend/.env` to change the database address, upload limits, retention period, session length, registration, or to enable an AI provider.
+
+**Turning on the AI assistant**
+1. Create an API key at [console.anthropic.com](https://console.anthropic.com) (API keys) and add a prepaid balance under Billing.
+2. In `backend/.env` set `FIS_AI_PROVIDER=anthropic`, `ANTHROPIC_API_KEY=<your key>` and `FIS_AI_MODEL=claude-opus-5-5`.
+3. Restart the backend (close the BACKEND window and run the launcher again).
+
+The key is read only by the backend and is never sent to the browser. A typical question costs a few US cents; the app shows an estimate under every answer.
 
 ---
 

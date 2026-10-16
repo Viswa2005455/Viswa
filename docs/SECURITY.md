@@ -26,7 +26,7 @@
 | Privacy controls | Users can export all their data as JSON, delete all data, or delete their account (password plus typed confirmation). Uploads expire after `FIS_UPLOAD_RETENTION_DAYS` and are purged automatically. Browser drafts are cleared on sign-out and when a different user signs in |
 | Secrets | API keys and the database URL live only in `backend/.env` (git-ignored); API keys are read with `SecretStr`. The frontend never receives them. In production the server refuses to start with the development database password |
 | Headers | `Cache-Control: no-store` on API responses, and HSTS in production |
-| AI privacy | No document is sent to any external service in the current version. The assistant (Phase 6) will require consent for each request |
+| AI privacy | The AI assistant is off unless `FIS_AI_PROVIDER=anthropic` and a key are set on the server. Each question needs a consent tick that lists the data being sent, and the tick resets after every question; the server refuses requests without consent. Attached data is size-limited (300 KB), framed to the model as data rather than instructions, and the AI's reply is rendered as text (no HTML). The model calls the app's calculators as tools and cannot read files, the database or other users' data. Requests are rate-limited (60 per user per hour) and logged in the user's history (mode and attachment names only, not content) |
 
 ## Not yet implemented
 
@@ -36,6 +36,7 @@
 - Multi-factor authentication.
 - Malware scanning of uploads.
 - Sandboxed code execution (Phase 5).
+- The AI provider (Anthropic) receives the question and the data the user ticked; check Anthropic's data-retention terms for your account before sending confidential documents.
 - Dependency vulnerability scanning in CI.
 
 ## Deployment checklist

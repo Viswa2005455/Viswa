@@ -1,0 +1,220 @@
+import { Bot, Calculator, Lock, RotateCcw, Send, ShieldCheck, User } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { SafeMarkdown } from '../components/SafeMarkdown';
+import { Badge, Callout, Card, ErrorBox, Field, PageHeader, Skeleton } from '../components/ui';
+import { api } from '../lib/api';
+import { toCompany, useCompanySources, type StatementData } from '../lib/company';
+import { useDCFModel } from '../lib/dcfModel';
+import { loadRaw } from '../lib/storage';
+import type { UploadSummary } from '../lib/types';
+import { useAsync } from '../lib/useApi';
+
+interface AIStatus { configured: boolean; provider: string; model: string | null; message: string; external: boolean }
+type Mode = 'ask' | 'red_flags' | 'model_check' | 'challenge' | 'peers' | 'tutor' | 'report';
+interface Msg { role: 'user' | 'assistant'; content: string; tools?: { name: string; ok: boolean }[]; cost?: number | null; model?: string }
+interface Reply { reply: string; stop_reason: string; model: string; tools_used: { name: string; ok: boolean }[]; usage: { input_tokens: number; output_tokens: number; estimated_cost_usd: number | null } }
+
+const MODES: { value: Mode; label: string; hint: string; prompts: string[] }[] = [
+  { value: 'ask', label: 'Ask about my data', hint: 'Questions about your statements, DCF or files', prompts: ['Summarise this company’s performance over the years.', 'Why did return on equity change?', 'Is the company’s working capital improving?'] },
+  { value: 'red_flags', label: 'Explain red flags', hint: 'What the Beneish, Altman and Piotroski results mean', prompts: ['Explain my red-flag results in simple words.', 'Which warning sign should I investigate first, and where in the annual report?'] },
+  { value: 'model_check', label: 'Explain model check', hint: 'Fixes for the Excel model checker’s findings', prompts: ['Explain the most serious issues and how to fix them in Excel.', 'Rewrite the formulas that have typed-in numbers.'] },
+  { value: 'challenge', label: 'Challenge my DCF', hint: 'A reviewer questions your assumptions', prompts: ['Challenge my DCF assumptions against the company’s history.', 'What growth does my valuation really need, and is it realistic?'] },
+  { value: 'peers', label: 'Peer insights', hint: 'Who leads, and why', prompts: ['Which company is strongest, and what are the trade-offs?', 'Which differences might be caused by accounting rather than performance?'] },
+  { value: 'tutor', label: 'CMA tutor', hint: 'Concepts, worked examples and practice questions', prompts: ['Explain material price and usage variances with an example.', 'Teach me WACC step by step, then give me a practice question.', 'Explain the difference between marginal and absorption costing.'] },
+  { value: 'report', label: 'Report draft', hint: 'A structured company report for you to edit', prompts: ['Draft a company-analysis report from the attached data.'] },
+];
+const TOOL_LABEL: Record<string, string> = { ratio_analysis: 'Ratio engine', red_flag_scan: 'Red-flag scan', peer_compare: 'Peer comparison', dcf_value: 'DCF', reverse_dcf: 'Reverse DCF', npv_irr: 'NPV / IRR', cost_of_capital: 'CAPM / WACC' };
+const TOPIC_MODE: Record<string, Mode> = { 'red-flags': 'red_flags', 'model-check': 'model_check', peers: 'peers', dcf: 'challenge' };
+
+export function Assistant() {
+  const [params] = useSearchParams();
+  const status = useAsync(() => api.get<AIStatus>('/api/ai/status'), []);
+  const { model: dcf, isExample: dcfExample } = useDCFModel();
+  const { sources } = useCompanySources();
+  const uploads = useAsync(() => api.get<{ uploads: UploadSummary[] }>('/api/uploads'), []);
+  const excel = (uploads.data?.uploads ?? []).filter((u) => /\.(xlsx|xlsm)$/i.test(u.name) && u.status === 'processed');
+  const topic = params.get('topic') ?? '';
+
+  const [mode, setMode] = useState<Mode>(TOPIC_MODE[topic] ?? 'ask');
+  const [useDcf, setUseDcf] = useState(topic === 'dcf');
+  const [stmtId, setStmtId] = useState<string>(topic === 'red-flags' ? loadRaw('fis.redflags.source', '') || 'first' : '');
+  const [checkId, setCheckId] = useState<string>(params.get('upload') ?? '');
+  const [usePeers, setUsePeers] = useState(topic === 'peers');
+  const [consent, setConsent] = useState(false);
+  const [input, setInput] = useState('');
+  const [msgs, setMsgs] = useState<Msg[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const endRef = useRef<HTMLDivElement>(null);
+  const peerPicks = loadRaw<{ id: string; name: string }[]>('fis.peers.picked', []);
+  const stmtSource = sources?.find((s) => s.id === stmtId) ?? (stmtId === 'first' ? sources?.find((s) => !s.isExample) ?? sources?.[0] : undefined);
+
+  useEffect(() => { endRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'end' }); }, [msgs, busy]);
+
+  const shared = useMemo(() => {
+    const list: string[] = [];
+    if (useDcf) list.push(`DCF assumptions${dcfExample ? ' (example)' : ''}`);
+    if (stmtSource) list.push(`Statements: ${stmtSource.name}`);
+    if (checkId) list.push(`Model-check results: ${excel.find((u) => u.id === checkId)?.name ?? 'workbook'}`);
+    if (usePeers) list.push(`Peer companies: ${peerPicks.map((p) => p.name).join(', ') || 'none selected'}`);
+    return list;
+  }, [useDcf, dcfExample, stmtSource, checkId, usePeers, excel, peerPicks]);
+
+  const buildAttachments = async () => {
+    const atts: { title: string; kind: string; data: unknown }[] = [];
+    if (useDcf) atts.push({ title: dcfExample ? 'DCF assumptions (example values, not real data)' : 'DCF assumptions', kind: 'dcf_model', data: dcf });
+    if (stmtSource) {
+      const d: StatementData = await stmtSource.load();
+      atts.push({ title: `Financial statements — ${stmtSource.name}`, kind: 'statements', data: {
+        periods: d.periods, lines: d.lines.map((l) => ({ label: l.label, key: l.key, values: l.values, source: l.source ?? null })),
+        engine_items: toCompany(d).items } });
+    }
+    if (checkId) {
+      const r = await api.post<{ name: string; counts: Record<string, number>; issues: unknown[] }>(`/api/analysis/model-check/${checkId}`, {});
+      atts.push({ title: `Excel model check — ${r.name}`, kind: 'model_check', data: { counts: r.counts, issues: r.issues.slice(0, 120) } });
+    }
+    if (usePeers && sources) {
+      const companies = [];
+      for (const p of peerPicks) {
+        const src = sources.find((s) => s.id === p.id);
+        if (src) { const d = await src.load(); companies.push({ name: p.name, ...toCompany(d) }); }
+      }
+      if (companies.length) atts.push({ title: 'Peer companies', kind: 'peer_companies', data: companies });
+    }
+    return atts;
+  };
+
+  const send = async (text: string) => {
+    const q = text.trim();
+    if (!q || busy) return;
+    if (!consent) { setError('Tick the box to agree to send your question and the listed data to Claude.'); return; }
+    setError(null);
+    const history: Msg[] = [...msgs, { role: 'user', content: q }];
+    setMsgs(history);
+    setInput('');
+    setBusy(true);
+    try {
+      const attachments = await buildAttachments();
+      const r = await api.post<Reply>('/api/ai/chat', {
+        mode, consent: true, attachments, messages: history.map((m) => ({ role: m.role, content: m.content })),
+      });
+      setMsgs([...history, { role: 'assistant', content: r.reply, tools: r.tools_used, cost: r.usage.estimated_cost_usd, model: r.model }]);
+    } catch (e) {
+      setError((e as Error).message);
+      setMsgs(msgs);
+      setInput(q);
+    } finally {
+      setBusy(false);
+      setConsent(false); // consent is given per request
+    }
+  };
+
+  const total = msgs.reduce((a, m) => a + (m.cost ?? 0), 0);
+  const configured = status.data?.configured;
+  const modeInfo = MODES.find((m) => m.value === mode)!;
+
+  return (
+    <div className="page">
+      <PageHeader title="AI Finance Assistant" badge={configured ? <Badge tone="accent">Claude {status.data?.model === 'claude-opus-5-5' ? 'Opus 5.5' : status.data?.model}</Badge> : <Badge tone="warn">Not set up</Badge>}
+        subtitle="Ask questions about your analysis in plain English. The assistant uses the app's tested calculators for every number and tells you where each figure came from."
+        actions={msgs.length > 0 && <button className="btn" onClick={() => { setMsgs([]); setError(null); }}><RotateCcw size={15} />New conversation</button>} />
+
+      {status.loading ? <Skeleton h={60} /> : !configured && (
+        <Callout tone="info" title="Set up the AI assistant (one time)">
+          <ol style={{ margin: '6px 0 0', paddingLeft: 20, display: 'grid', gap: 4 }}>
+            <li>Create an API key at <b>console.anthropic.com</b> → API keys, and add a small prepaid balance under Billing.</li>
+            <li>Open the file <code>backend\.env</code> in the app folder (copy <code>.env.example</code> to <code>backend\.env</code> if it does not exist).</li>
+            <li>Set <code>FIS_AI_PROVIDER=anthropic</code> and <code>ANTHROPIC_API_KEY=</code> followed by your key. Keep <code>FIS_AI_MODEL=claude-opus-5-5</code>.</li>
+            <li>Close the BACKEND window and run <code>start-windows.bat</code> again.</li>
+          </ol>
+          <div className="mt-sm faint" style={{ fontSize: 12.5 }}>The key stays on your computer's backend and is never sent to the browser. Everything else in the app works without it. {status.data?.message}</div>
+        </Callout>
+      )}
+
+      <div className="grid cols-3 mt">
+        <div className="stack">
+          <Card title="What should the assistant do?">
+            <div className="stack" style={{ gap: 6 }}>
+              {MODES.map((m) => (
+                <button key={m.value} className={`btn mode-btn ${mode === m.value ? 'primary' : ''}`} aria-pressed={mode === m.value} onClick={() => setMode(m.value)}>
+                  <span><b>{m.label}</b><br /><span style={{ fontSize: 12, opacity: 0.85 }}>{m.hint}</span></span>
+                </button>
+              ))}
+            </div>
+          </Card>
+          <Card title="Data to share" subtitle="Only what you tick is sent with your question">
+            <div className="stack" style={{ gap: 10, fontSize: 13.5 }}>
+              <label className="row"><input type="checkbox" checked={useDcf} onChange={(e) => setUseDcf(e.target.checked)} />DCF assumptions{dcfExample && <Badge tone="sample">example</Badge>}</label>
+              <Field label="Company statements">
+                <select className="input" value={stmtSource?.id ?? ''} onChange={(e) => setStmtId(e.target.value)}>
+                  <option value="">None</option>
+                  {(sources ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </Field>
+              <Field label="Excel model-check results">
+                <select className="input" value={checkId} onChange={(e) => setCheckId(e.target.value)}>
+                  <option value="">None</option>
+                  {excel.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+              </Field>
+              <label className="row" style={{ alignItems: 'flex-start', flexWrap: 'nowrap' }}><input type="checkbox" checked={usePeers} onChange={(e) => setUsePeers(e.target.checked)} disabled={!peerPicks.length} />
+                <span>Peer companies {peerPicks.length ? `(${peerPicks.length} from Peer Comparison)` : <span className="faint">— pick them on <Link to="/peers">Peer Comparison</Link></span>}</span></label>
+            </div>
+          </Card>
+          <Card title="Privacy" actions={<ShieldCheck size={18} className="pos" />}>
+            <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 6, fontSize: 13 }}>
+              <li>Your question and the ticked data are sent to Anthropic (Claude) only when you tick the consent box, for that one question.</li>
+              <li>Numbers come from the app's calculators (shown as "Used: …" under each answer).</li>
+              <li>Answers can still contain mistakes. Check important figures against the source.</li>
+              <li>Educational analysis, not investment advice.</li>
+            </ul>
+          </Card>
+        </div>
+
+        <div className="span-2 stack assistant-chat">
+          <Card title={modeInfo.label} subtitle={modeInfo.hint} className="chat-card">
+            <div className="chat" aria-live="polite">
+              {msgs.length === 0 && (
+                <div className="stack" style={{ gap: 8 }}>
+                  <p className="muted" style={{ fontSize: 13.5 }}>Try one of these:</p>
+                  {modeInfo.prompts.map((p) => <button key={p} className="btn sm" style={{ justifyContent: 'flex-start' }} onClick={() => setInput(p)}>{p}</button>)}
+                </div>
+              )}
+              {msgs.map((m, i) => (
+                <div key={i} className={`chat-msg ${m.role}`}>
+                  <div className="chat-avatar">{m.role === 'user' ? <User size={15} /> : <Bot size={15} />}</div>
+                  <div className="chat-bubble">
+                    {m.role === 'assistant' ? <SafeMarkdown text={m.content} /> : <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{m.content}</p>}
+                    {m.role === 'assistant' && (
+                      <div className="row faint" style={{ fontSize: 11.5, marginTop: 8, gap: 6 }}>
+                        {m.tools && m.tools.length > 0 && <><Calculator size={12} />Used: {[...new Set(m.tools.map((t) => TOOL_LABEL[t.name] ?? t.name))].join(', ')} ·</>}
+                        {typeof m.cost === 'number' && <>about ${m.cost.toFixed(3)} (≈ ₹{(m.cost * 85).toFixed(2)})</>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {busy && <div className="chat-msg assistant"><div className="chat-avatar"><Bot size={15} /></div><div className="chat-bubble"><Skeleton h={14} w={220} /><div className="faint mt-sm" style={{ fontSize: 12 }}>Thinking and running calculations…</div></div></div>}
+              <div ref={endRef} />
+            </div>
+            {error && <div className="mt-sm"><ErrorBox error={error} /></div>}
+            <div className="stack mt" style={{ gap: 8 }}>
+              <textarea className="input" rows={3} placeholder={configured ? 'Ask a question…' : 'Set up the assistant first (see the steps above).'} value={input}
+                onChange={(e) => setInput(e.target.value)} disabled={!configured || busy} maxLength={4000}
+                onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send(input); }} aria-label="Your question" />
+              <label className="row" style={{ fontSize: 12.5, alignItems: 'flex-start' }}>
+                <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} disabled={!configured} />
+                <span><Lock size={12} style={{ verticalAlign: -1 }} /> Send my question{shared.length ? ' and this data' : ''} to Anthropic (Claude) to answer it{shared.length ? `: ${shared.join('; ')}` : ' (no data is attached)'}.</span>
+              </label>
+              <div className="row between">
+                <span className="faint" style={{ fontSize: 12 }}>{total > 0 ? `This conversation: about $${total.toFixed(3)} (≈ ₹${(total * 85).toFixed(2)})` : 'Ctrl + Enter to send'}</span>
+                <button className="btn primary" onClick={() => send(input)} disabled={!configured || busy || !input.trim()}><Send size={15} />{busy ? 'Working…' : 'Send'}</button>
+              </div>
+            </div>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
