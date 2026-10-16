@@ -60,6 +60,23 @@ else
   echo "[5/5] Website packages are installed."
 fi
 
+# An older copy that is still running would keep ports 8000/5173 and answer instead of this one.
+# Stop it only if it answers like this app; never touch other programs.
+port_pids() { lsof -ti "tcp:$1" -sTCP:LISTEN 2>/dev/null || fuser "$1/tcp" 2>/dev/null || true; }
+for check in "8000 http://localhost:8000/api/health database_engine" "5173 http://localhost:5173/ Finance.Intelligence.Studio"; do
+  set -- $check
+  pids="$(port_pids "$1")"
+  [ -z "$pids" ] && continue
+  if curl -fs --max-time 3 "$2" 2>/dev/null | grep -q "$3"; then
+    echo "      An earlier copy of the app is still running on port $1. Stopping it..."
+    kill $pids 2>/dev/null || true
+    sleep 1
+  else
+    echo "Port $1 is being used by another program. Close it, then run this script again."
+    exit 1
+  fi
+done
+
 (cd backend && uv run uvicorn app.main:app --port 8000) &
 API_PID=$!
 trap 'kill $API_PID 2>/dev/null' EXIT

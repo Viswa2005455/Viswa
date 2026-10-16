@@ -43,6 +43,9 @@ What the launcher does:
 - Installs **uv** (and through it Python) and, on Windows, **Node.js** if they are missing.
 - Creates a local database file at `backend/storage/finance_studio.db`, so you do **not** need to install PostgreSQL for personal use.
 - Starts the backend and the website in two windows. Keep those windows open while you use the app, and close them to stop it.
+- If an older copy of the app is still running (for example from a previous download), it stops that copy first. Programs that are not this app are never stopped; the launcher tells you instead.
+
+**Updating to a new version:** close the old BACKEND and WEBSITE windows, unzip the new version, and copy your old `backend/storage` folder into the new `backend` folder to keep your account and files. Then run the launcher again.
 
 The local database file is fine for one person on one computer. For anything shared or put online, use PostgreSQL: follow the manual steps below, or set `DATABASE_URL` in `backend/.env` and the launcher will use it.
 

@@ -123,6 +123,21 @@ def test_cross_site_post_blocked(client):
     assert r.status_code == 403 and r.json()["type"] == "csrf"
     ok = client.post("/api/projects", json={"name": "X"}, headers={"Origin": "http://localhost:5173"})
     assert ok.status_code == 201
+    # the website may start on another port if 5173 is busy; still this computer, so allowed
+    other_port = client.post("/api/projects", json={"name": "Y"}, headers={"Origin": "http://localhost:5174"})
+    assert other_port.status_code == 201
+    for bad in ("http://localhost.evil.example", "https://localhost:5174", "http://127.0.0.1.nip.io"):
+        assert client.post("/api/projects", json={"name": "Z"}, headers={"Origin": bad}).status_code == 403
+
+
+def test_other_local_ports_blocked_in_production(monkeypatch):
+    from app.config import Settings
+
+    dev = Settings(fis_env="development")
+    prod = Settings(fis_env="production", fis_cors_origins="https://studio.example")
+    assert dev.origin_allowed("http://localhost:5174") and dev.origin_allowed("http://127.0.0.1:3000")
+    assert not prod.origin_allowed("http://localhost:5174")
+    assert prod.origin_allowed("https://studio.example")
 
 
 def test_registration_can_be_disabled(anon_client, monkeypatch):

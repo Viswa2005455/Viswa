@@ -1,5 +1,6 @@
 """Application settings, read from environment variables or backend/.env (never committed)."""
 
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -7,6 +8,7 @@ from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
+_LOCAL_ORIGIN = re.compile(r"http://(?:localhost|127\.0\.0\.1|\[::1\])(?::\d{1,5})?")
 
 
 class Settings(BaseSettings):
@@ -66,6 +68,13 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.fis_cors_origins.split(",") if o.strip()]
+
+    def origin_allowed(self, origin: str) -> bool:
+        """Configured origins are always allowed. Outside production, any port on this computer
+        (localhost) is too, so the app keeps working when the website starts on another port."""
+        if origin in self.cors_origins:
+            return True
+        return not self.is_production and _LOCAL_ORIGIN.fullmatch(origin) is not None
 
     @property
     def max_upload_bytes(self) -> int:

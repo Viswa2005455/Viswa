@@ -7,6 +7,9 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
+    // Fail clearly instead of moving to another port: the launchers open :5173, and a second
+    // copy on :5174 usually means an older copy of the app is still running.
+    strictPort: true,
     proxy: { '/api': 'http://127.0.0.1:8000' },
   },
   preview: {

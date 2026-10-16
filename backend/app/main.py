@@ -26,7 +26,7 @@ from .db.session import session_factory
 from .files.service import purge_expired
 from .finance import FinanceInputError
 
-VERSION = "0.7.0"
+VERSION = "0.7.1"
 log = logging.getLogger("fis")
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
@@ -81,7 +81,7 @@ async def origin_check(request: Request, call_next):
         origin = request.headers.get("origin")
         if origin:
             same_host = urlsplit(origin).netloc == request.headers.get("host", "")
-            if not same_host and origin not in get_settings().cors_origins:
+            if not same_host and not get_settings().origin_allowed(origin):
                 return JSONResponse(status_code=403, content={"detail": "Cross-site request blocked.", "type": "csrf"})
     return await call_next(request)
 

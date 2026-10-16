@@ -68,6 +68,9 @@ if exist "node_modules\.fis-installed" (
 popd
 
 rem ---------------------------------------------------------------- start
+rem An older copy that is still running would keep ports 8000/5173 and answer instead of this one.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\stop-old-copy.ps1"
+if errorlevel 2 goto :end
 echo.
 echo Starting the app. Two new windows will open - keep them open while you use the app.
 start "Finance Studio - BACKEND (keep open)" /D "%~dp0backend" cmd /k uv run uvicorn app.main:app --port 8000

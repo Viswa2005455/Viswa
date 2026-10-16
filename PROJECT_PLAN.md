@@ -2,7 +2,7 @@
 
 This file is the source of truth for progress. Update it at the end of every working session so development can resume reliably.
 
-_Last updated: 2026-10-16 (session 5)_
+_Last updated: 2026-10-16 (session 5, update 2)_
 
 ## Environment found at the start
 
@@ -37,6 +37,12 @@ _Last updated: 2026-10-16 (session 5)_
 - Statement mapping now ignores non-period columns such as "Growth" when picking the latest and prior year.
 - 145 backend tests pass on PostgreSQL (8 new). Frontend typecheck, tests and build pass. A browser check with a Screener-style workbook showed 11 highlighted cells and no console errors.
 - The user's actual TCS.xlsx was not available here, so the fix was tested on a reconstructed workbook.
+- **Follow-up: "Cross-site request blocked" on Windows.** The old copy was still running, so the new website started on port 5174, which the origin check rejected.
+  - Outside production, any localhost port is now accepted; production is unchanged and tested.
+  - Vite uses `strictPort`, so it fails clearly instead of moving to another port.
+  - Both launchers stop an earlier copy of this app that still holds ports 8000 or 5173, detected by its response. Other programs are left alone and reported.
+  - Tested here on Linux: an old copy was stopped and a foreign program was not. The Windows PowerShell part (`scripts/stop-old-copy.ps1`) could not be run here.
+  - 146 backend tests pass.
 
 ## Session 4: one-click local start
 
