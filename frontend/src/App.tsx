@@ -26,6 +26,9 @@ const Budgeting = lazy(() => import('./pages/Budgeting').then((m) => ({ default:
 const Statements = lazy(() => import('./pages/Statements').then((m) => ({ default: m.Statements })));
 const CashFlow = lazy(() => import('./pages/CashFlow').then((m) => ({ default: m.CashFlow })));
 const Projects = lazy(() => import('./pages/Projects').then((m) => ({ default: m.Projects })));
+const RedFlags = lazy(() => import('./pages/RedFlags').then((m) => ({ default: m.RedFlags })));
+const ModelCheck = lazy(() => import('./pages/ModelCheck').then((m) => ({ default: m.ModelCheck })));
+const Peers = lazy(() => import('./pages/Peers').then((m) => ({ default: m.Peers })));
 const SettingsPage = lazy(() => import('./pages/Settings').then((m) => ({ default: m.SettingsPage })));
 
 export function App() {
@@ -60,6 +63,9 @@ function Gate() {
                 <Route path="statements" element={<Statements />} />
                 <Route path="ratios" element={<Ratios />} />
                 <Route path="cash-flow" element={<CashFlow />} />
+                <Route path="red-flags" element={<RedFlags />} />
+                <Route path="model-check" element={<ModelCheck />} />
+                <Route path="peers" element={<Peers />} />
                 <Route path="scenarios" element={<Scenarios />} />
                 <Route path="sensitivity" element={<Sensitivity />} />
                 <Route path="dcf" element={<DCF />} />

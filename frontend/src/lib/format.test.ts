@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { csvCell, fmtCompact, fmtPct, fmtPctPoints, parseInputNumber, toCSV } from './format';
+import { csvCell, fmtCompact, fmtMoney, fmtNum, fmtPct, fmtPctPoints, fmtScaled, parseInputNumber, setNumberStyle, toCSV } from './format';
 
 describe('format', () => {
   it('formats decimals and percentage points distinctly', () => {
@@ -30,5 +30,23 @@ describe('format', () => {
     expect(csvCell('-12.5')).toBe('"-12.5"');
     expect(csvCell(-12.5)).toBe('"-12.5"');
     expect(toCSV([['a', 1], ['b', null]])).toBe('"a","1"\r\n"b",""');
+  });
+
+  it('groups digits the Indian or international way', () => {
+    setNumberStyle('auto');
+    expect(fmtNum(12345678, 0, 'INR')).toBe('1,23,45,678');
+    expect(fmtNum(12345678, 0, 'USD')).toBe('12,345,678');
+    setNumberStyle('indian');
+    expect(fmtNum(12345678, 0, 'USD')).toBe('1,23,45,678');
+    setNumberStyle('international');
+    expect(fmtNum(12345678, 0, 'INR')).toBe('12,345,678');
+    setNumberStyle('auto');
+  });
+
+  it('labels amounts stored in lakhs or crores', () => {
+    expect(fmtScaled(255324, 'crores')).toBe(`${fmtMoney(255324)} Cr`);
+    expect(fmtScaled(255324, 'crores')).toContain('2,55,324');
+    expect(fmtScaled(null, 'crores')).toBe('—');
+    expect(fmtScaled(1500, 'units')).toBe(fmtMoney(1500));
   });
 });

@@ -7,13 +7,34 @@ export type UnitScale = (typeof UNIT_SCALES)[number];
 
 const LOCALE: Record<Currency, string> = { INR: 'en-IN', USD: 'en-US', EUR: 'en-IE', GBP: 'en-GB', JPY: 'ja-JP' };
 
+/** Digit grouping: 'indian' = 1,23,45,678 · 'international' = 12,345,678 · 'auto' = by currency. */
+export type NumberStyle = 'auto' | 'indian' | 'international';
+let numberStyle: NumberStyle = 'auto';
+/** Set once from the Settings provider; formatting stays a pure presentation concern. */
+export function setNumberStyle(s: NumberStyle) {
+  numberStyle = s;
+}
+function locale(currency: Currency): string {
+  if (numberStyle === 'indian') return 'en-IN';
+  if (numberStyle === 'international') return currency === 'INR' ? 'en-US' : LOCALE[currency];
+  return LOCALE[currency];
+}
+
+/** Suffix shown after an amount stored in the given unit, e.g. 255324 crores -> "₹2,55,324 Cr". */
+export const UNIT_SUFFIX: Record<UnitScale, string> = {
+  units: '', thousands: 'K', lakhs: 'L', crores: 'Cr', millions: 'M', billions: 'B',
+};
+export const UNIT_LABEL: Record<UnitScale, string> = {
+  units: '', thousands: 'in thousands', lakhs: 'in lakhs', crores: 'in crores', millions: 'in millions', billions: 'in billions',
+};
+
 export function isNum(v: unknown): v is number {
   return typeof v === 'number' && Number.isFinite(v);
 }
 
 export function fmtMoney(v: number | null | undefined, currency: Currency = 'INR', digits = 0): string {
   if (!isNum(v)) return '—';
-  const s = new Intl.NumberFormat(LOCALE[currency], {
+  const s = new Intl.NumberFormat(locale(currency), {
     style: 'currency', currency, minimumFractionDigits: digits, maximumFractionDigits: currency === 'JPY' ? 0 : digits,
   }).format(Math.abs(v));
   return v < 0 ? `−${s}` : s;
@@ -21,8 +42,15 @@ export function fmtMoney(v: number | null | undefined, currency: Currency = 'INR
 
 export function fmtNum(v: number | null | undefined, digits = 2, currency: Currency = 'INR'): string {
   if (!isNum(v)) return '—';
-  const s = new Intl.NumberFormat(LOCALE[currency], { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(Math.abs(v));
+  const s = new Intl.NumberFormat(locale(currency), { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(Math.abs(v));
   return v < 0 ? `−${s}` : s;
+}
+
+/** An amount already expressed in `units` (e.g. a Screener export in ₹ crores): "₹2,55,324 Cr". */
+export function fmtScaled(v: number | null | undefined, units: UnitScale, currency: Currency = 'INR', digits = 0): string {
+  if (!isNum(v)) return '—';
+  const suffix = UNIT_SUFFIX[units];
+  return suffix ? `${fmtMoney(v, currency, digits)} ${suffix}` : fmtMoney(v, currency, digits);
 }
 
 /** Compact for chart axes: 1.2K, 3.4M (or L / Cr for INR). */

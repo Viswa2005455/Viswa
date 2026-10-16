@@ -6,7 +6,7 @@ import { C, ChartTooltip, Legend, axisProps, gridProps } from '../components/cha
 import { SaveLoad } from '../components/SaveLoad';
 import { Badge, Callout, Card, ErrorBox, Kpi, LearnBox, NumberField, PageHeader, Tabs, Warnings } from '../components/ui';
 import { api } from '../lib/api';
-import { downloadFile, fmtCompact, fmtNum, fmtPct, fmtPctPoints, isNum, toCSV } from '../lib/format';
+import { UNIT_LABEL, downloadFile, fmtCompact, fmtNum, fmtPct, fmtPctPoints, isNum, toCSV } from '../lib/format';
 import { useSettings } from '../lib/settings';
 import { loadRaw, save } from '../lib/storage';
 import { useToast } from '../lib/toast';
@@ -167,7 +167,7 @@ export function Statements() {
         <Tabs label="View" value={tab} onChange={setTab} options={[
           { value: 'overview', label: 'Overview' }, { value: 'horizontal', label: 'Horizontal' }, { value: 'vertical', label: 'Common-size' },
           { value: 'checks', label: <>Checks {fails.length > 0 && <Badge tone="neg">{fails.length}</Badge>}</> }, { value: 'edit', label: 'Edit data' }]} />
-        {r && <span className="faint" style={{ fontSize: 12.5 }}>{r.lines.length} lines · {r.periods.length} periods · {settings.units}</span>}
+        {r && <span className="faint" style={{ fontSize: 12.5 }}>{r.lines.length} lines · {r.periods.length} periods · {settings.currency} {UNIT_LABEL[settings.units] || 'in units'}</span>}
       </div>
       {res.error && <div className="mt"><ErrorBox error={res.error} /></div>}
       {!complete && <div className="mt"><Callout tone="warn">Every line and period needs a name.</Callout></div>}

@@ -6,7 +6,7 @@ import { useProjects } from '../lib/project';
 import { downloadFile } from '../lib/format';
 import { Callout, Card, Field, PageHeader, Skeleton, Tabs } from '../components/ui';
 import { api } from '../lib/api';
-import { CURRENCIES, UNIT_SCALES, type Currency, type UnitScale } from '../lib/format';
+import { CURRENCIES, UNIT_SCALES, type Currency, type NumberStyle, type UnitScale } from '../lib/format';
 import { useSettings, type ThemePref } from '../lib/settings';
 import { useToast } from '../lib/toast';
 import { useAsync } from '../lib/useApi';
@@ -47,6 +47,13 @@ export function SettingsPage() {
             <Field label="Unit label for your models">
               <select className="input" value={settings.units} onChange={(e) => update({ units: e.target.value as UnitScale })}>
                 {UNIT_SCALES.map((u) => <option key={u}>{u}</option>)}
+              </select>
+            </Field>
+            <Field label="Number style" hint="How digits are grouped">
+              <select className="input" value={settings.numberStyle} onChange={(e) => update({ numberStyle: e.target.value as NumberStyle })}>
+                <option value="auto">Automatic (Indian for INR)</option>
+                <option value="indian">Indian — 1,23,45,678</option>
+                <option value="international">International — 12,345,678</option>
               </select>
             </Field>
           </div>

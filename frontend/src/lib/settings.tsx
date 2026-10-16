@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import type { Currency, UnitScale } from './format';
+import { setNumberStyle, type Currency, type NumberStyle, type UnitScale } from './format';
 import { load, save } from './storage';
 
 export type ThemePref = 'system' | 'dark' | 'light';
@@ -11,11 +11,12 @@ export interface Settings {
   learningMode: boolean;
   periodFrom: string;
   periodTo: string;
+  numberStyle: NumberStyle;
 }
 
 const DEFAULTS: Settings = {
   theme: 'system', currency: 'INR', units: 'lakhs', reduceMotion: false, learningMode: true,
-  periodFrom: '2025-11', periodTo: '2026-10',
+  periodFrom: '2025-11', periodTo: '2026-10', numberStyle: 'auto',
 };
 
 interface Ctx { settings: Settings; update: (p: Partial<Settings>) => void; resolvedTheme: 'dark' | 'light' }
@@ -26,7 +27,11 @@ function systemDark() {
 }
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
-  const [settings, setSettings] = useState<Settings>(() => load('fis.settings', DEFAULTS));
+  const [settings, setSettings] = useState<Settings>(() => {
+    const s = { ...DEFAULTS, ...load('fis.settings', DEFAULTS) };
+    setNumberStyle(s.numberStyle);
+    return s;
+  });
   const [sysDark, setSysDark] = useState(systemDark);
 
   useEffect(() => {
@@ -46,6 +51,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const update = useCallback((p: Partial<Settings>) => {
     setSettings((s) => {
       const next = { ...s, ...p };
+      setNumberStyle(next.numberStyle);
       save('fis.settings', next);
       return next;
     });

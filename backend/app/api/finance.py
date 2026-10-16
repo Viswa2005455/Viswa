@@ -9,7 +9,7 @@ from typing import Literal
 from fastapi import APIRouter
 from pydantic import BaseModel, Field, model_validator
 
-from ..finance import FinanceInputError, forecasting, ratios, sensitivity, tvm, variance
+from ..finance import FinanceInputError, forecasting, ratios, sensitivity, tvm, valuation_range, variance
 from ..finance.cost_of_capital import capm, wacc
 from ..finance.dcf import OUTPUTS, SENSITIVITY_VARIABLES, DCFInputs, run_dcf
 
@@ -341,3 +341,43 @@ def dcf_break_even(req: BreakEvenRequest):
             "base_value": sensitivity.get_variable(base, req.variable),
             "message": None if value is not None else
             "No value in the search range produces the target (the output does not cross the target there)."}
+
+
+# ---------------------------------------------------------------- Reverse DCF and valuation range
+
+class ReverseDCFRequest(BaseModel):
+    model: DCFRequest
+    target: float = Field(description="Market price per share (or market equity / enterprise value)")
+    variable: Literal["revenue_growth", "ebit_margin", "terminal_growth", "wacc", "exit_multiple"] = "revenue_growth"
+    output: Literal["value_per_share", "equity_value", "enterprise_value"] = "value_per_share"
+
+
+@router.post("/dcf/reverse")
+def dcf_reverse(req: ReverseDCFRequest):
+    return clean(asdict(valuation_range.reverse_dcf(req.model.to_inputs(), req.target, req.variable, req.output)))
+
+
+class DistributionIn(BaseModel):
+    variable: str
+    kind: Literal["normal", "triangular", "uniform"]
+    a: float
+    b: float
+    c: float | None = None
+    clip_low: float | None = None
+    clip_high: float | None = None
+
+
+class MonteCarloRequest(BaseModel):
+    model: DCFRequest
+    distributions: list[DistributionIn] = Field(min_length=1, max_length=9)
+    output: Literal["value_per_share", "equity_value", "enterprise_value"] = "value_per_share"
+    simulations: int = Field(default=5000, ge=100, le=20000)
+    seed: int = Field(default=42, ge=0, le=2**31 - 1)
+    target: float | None = None
+
+
+@router.post("/dcf/monte-carlo")
+def dcf_monte_carlo(req: MonteCarloRequest):
+    dists = [valuation_range.Distribution(**d.model_dump()) for d in req.distributions]
+    r = valuation_range.monte_carlo(req.model.to_inputs(), dists, req.output, req.simulations, req.seed, req.target)
+    return clean(asdict(r))

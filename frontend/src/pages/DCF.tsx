@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { DCFAssumptions } from '../components/DCFInputs';
 import { SaveLoad } from '../components/SaveLoad';
+import { MonteCarlo, ReverseDCF, useMarketPrice } from '../components/ValuationRange';
 import { C, ChartTooltip, Legend, axisProps, gridProps } from '../components/charts';
 import { Badge, Callout, Card, ErrorBox, Formula, Kpi, LearnBox, NumberField, PageHeader, Warnings } from '../components/ui';
 import { api } from '../lib/api';
@@ -17,6 +18,7 @@ export function DCF() {
   const { model, patch, reset, isExample, setModel } = useDCFModel();
   const { settings } = useSettings();
   const cur = settings.currency;
+  const [marketPrice, setMarketPrice] = useMarketPrice();
   const req = useDebounced(model, 250);
   const res = useAsync(() => api.post<DCFResult>('/api/finance/dcf', req), [JSON.stringify(req)]);
   const r = res.data;
@@ -146,11 +148,16 @@ Equity = EV − Debt + Cash`}</Formula>
             </Card>
           )}
 
+          {stale && <ReverseDCF model={model} price={marketPrice} setPrice={setMarketPrice} />}
+          {stale && <MonteCarlo model={model} price={marketPrice} />}
+
           <LearnBox title="Discounted cash flow valuation">
             <div className="stack" style={{ fontSize: 13 }}>
               <p>A DCF values a business as the present value of the cash it will generate for all capital providers (FCFF), discounted at the blended required return (WACC).</p>
               <p><b>Consistency:</b> FCFF (unlevered) pairs with WACC; free cash flow to equity pairs with the cost of equity. Nominal cash flows need a nominal discount rate.</p>
               <p><b>Terminal value</b> often exceeds 60–80% of EV. Keep g at or below long-run nominal GDP growth, and always check that WACC &gt; g.</p>
+              <p><b>Reverse DCF</b> turns the question around: instead of "what is it worth?", it asks "what growth does today's price assume?" — then you judge whether that is realistic.</p>
+              <p><b>Monte Carlo</b> runs the model thousands of times with assumptions drawn from ranges you choose. The P10–P90 band is a more honest answer than a single number.</p>
               <p><b>Common mistakes:</b> mixing currencies or units, double-counting cash, using book instead of market values in WACC weights, and forgetting the change in working capital.</p>
             </div>
           </LearnBox>

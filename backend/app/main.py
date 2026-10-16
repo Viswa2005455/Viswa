@@ -19,7 +19,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from .ai.provider import get_provider
-from .api import auth, dashboard, finance, planning, projects, uploads
+from .api import analysis, auth, dashboard, finance, planning, projects, uploads
 from .auth.deps import current_user
 from .config import get_settings
 from .db.session import session_factory
@@ -143,6 +143,7 @@ protected = [Depends(current_user)]
 app.include_router(finance.router, dependencies=protected)
 app.include_router(planning.router, dependencies=protected)
 app.include_router(dashboard.router, dependencies=protected)
+app.include_router(analysis.router, dependencies=protected)
 
 
 @app.api_route("/api/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)
