@@ -216,6 +216,8 @@ code, pre, .mono { font-family: var(--font-mono); font-size: .92em; }
 .span-2 { grid-column: span 2; }
 .span-all { grid-column: 1 / -1; }
 .stack { display: grid; gap: 16px; align-content: start; }
+/* Let wide tables scroll inside their card instead of stretching the page on small screens. */
+.stack > *, .grid > * { min-width: 0; }
 .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .between { justify-content: space-between; }
 .mt { margin-top: 16px; }

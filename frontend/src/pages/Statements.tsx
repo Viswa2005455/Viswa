@@ -4,18 +4,20 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { C, ChartTooltip, Legend, axisProps, gridProps } from '../components/charts';
 import { SaveLoad } from '../components/SaveLoad';
-import { Badge, Callout, Card, ErrorBox, Kpi, LearnBox, NumberField, PageHeader, Tabs, Warnings } from '../components/ui';
+import { Badge, Callout, Card, ErrorBox, Field, Kpi, LearnBox, NumberField, PageHeader, Tabs, Warnings } from '../components/ui';
 import { api } from '../lib/api';
 import { UNIT_LABEL, downloadFile, fmtCompact, fmtNum, fmtPct, fmtPctPoints, isNum, toCSV } from '../lib/format';
 import { useSettings } from '../lib/settings';
 import { loadRaw, save } from '../lib/storage';
+import { useProjects } from '../lib/project';
 import { useToast } from '../lib/toast';
 import type { UploadSummary } from '../lib/types';
 import { useAsync, useDebounced } from '../lib/useApi';
 
 type Stmt = 'income' | 'balance' | 'cashflow';
 interface Line { label: string; statement: Stmt; key: string | null; values: (number | null)[]; source?: string | null }
-interface Data { periods: string[]; lines: Line[] }
+interface Data { periods: string[]; lines: Line[]; company?: string; units?: string; market?: Record<string, (number | null)[]> }
+interface ScreenerImport { upload_id: string; file: string; company: string | null; periods: string[]; units: string; lines: Line[]; market: Record<string, (number | null)[]>; approximations: Record<string, Line>; notes: string[] }
 interface Change { absolute: number | null; pct: number | null; note: string | null }
 interface Report {
   periods: string[];
@@ -67,10 +69,13 @@ export function Statements() {
   const setData = (d: Data, example = false) => { const s = { data: d, isExample: example }; setState(s); save('fis.statements', s); };
   const [tab, setTab] = useState<'overview' | 'horizontal' | 'vertical' | 'checks' | 'edit'>('overview');
   const [pending, setPending] = useState<{ file: string; sheets: (Suggested & { use: boolean })[] } | null>(null);
+  const [screener, setScreener] = useState<(ScreenerImport & { name: string; approx: boolean }) | null>(null);
+  const { activeId } = useProjects();
 
   const items = useAsync(() => api.get<{ items: Record<string, { statement: Stmt; label: string }> }>('/api/finance/statements/items'), []);
   const uploads = useAsync(() => api.get<{ uploads: UploadSummary[] }>('/api/uploads'), []);
   const candidates = uploads.data?.uploads.filter((u) => u.recommendations.some((r) => r.module === 'Financial Statements')) ?? [];
+  const excelUploads = uploads.data?.uploads.filter((u) => /\.(xlsx|xlsm)$/i.test(u.name)) ?? [];
 
   const loadFrom = async (id: string) => {
     try {
@@ -79,6 +84,29 @@ export function Statements() {
       setPending({ file: rec.name, sheets: rec.statements.map((s) => ({ ...s, use: true })) });
       setTab('overview');
     } catch (e) { toast((e as Error).message, 'error'); }
+  };
+  const loadScreener = async (id: string) => {
+    try {
+      const r = await api.post<ScreenerImport>(`/api/analysis/screener/${id}`, {});
+      setScreener({ ...r, name: r.company ? titleCase(r.company) : r.file.replace(/\.xlsx?m?$/i, ''), approx: false });
+      setPending(null);
+    } catch (e) { toast((e as Error).message, 'error'); }
+  };
+  const screenerData = (s: ScreenerImport & { approx: boolean; name: string }): Data => ({
+    periods: s.periods, company: s.name, units: s.units, market: s.market,
+    lines: [...s.lines, ...(s.approx ? Object.values(s.approximations) : [])],
+  });
+  const applyScreener = async (andSave: boolean) => {
+    if (!screener) return;
+    const d = screenerData(screener);
+    setData(d);
+    setScreener(null);
+    if (andSave) {
+      try {
+        await api.post('/api/saved', { kind: 'statements', name: screener.name, project_id: activeId, data: d, note: `Imported from ${screener.file}` });
+        toast(`Saved "${screener.name}" — it is now available in Red Flags, Peer Comparison, the dashboard and reports`);
+      } catch (e) { toast((e as Error).message, 'error'); }
+    } else toast(`Imported ${d.lines.length} lines across ${d.periods.length} years`);
   };
   const fileParam = params.get('file');
   useEffect(() => { if (fileParam) loadFrom(fileParam); }, [fileParam]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -136,10 +164,44 @@ export function Statements() {
           <button className="btn" onClick={exportCsv} disabled={!r}><Download size={15} />Export CSV</button>
         </>} />
 
-      <Card title="Import from an upload" subtitle="Sheets with line items in the first column and periods across the top">
-        {candidates.length ? <div className="row">{candidates.map((u) => <button key={u.id} className="btn sm" onClick={() => loadFrom(u.id)}><FileUp size={14} />{u.name}</button>)}</div>
-          : <p className="muted">No statement files uploaded yet. <Link to="/upload">Upload an Excel or CSV statement</Link>, or edit the data below.</p>}
-      </Card>
+      <div className="grid cols-2">
+        <Card title="Import a Screener.in export" subtitle="One click: the full 10-year P&L, balance sheet, cash flow, share price and shares, with cell references">
+          {excelUploads.length ? <div className="row">{excelUploads.map((u) => <button key={u.id} className="btn sm" onClick={() => loadScreener(u.id)}><FileUp size={14} />{u.name}</button>)}</div>
+            : <p className="muted">On screener.in, open a company and click <b>Export to Excel</b>, then <Link to="/upload">upload the file</Link>.</p>}
+        </Card>
+        <Card title="Import from any statement file" subtitle="Sheets with line items in the first column and periods across the top">
+          {candidates.length ? <div className="row">{candidates.map((u) => <button key={u.id} className="btn sm" onClick={() => loadFrom(u.id)}><FileUp size={14} />{u.name}</button>)}</div>
+            : <p className="muted">No statement files uploaded yet. <Link to="/upload">Upload an Excel or CSV statement</Link>, or edit the data below.</p>}
+        </Card>
+      </div>
+
+      {screener && (
+        <div className="mt">
+          <Card title={`Screener import: ${screener.company ?? screener.file}`} subtitle={`${screener.periods[0]} – ${screener.periods[screener.periods.length - 1]} · ${screener.lines.length} lines · ₹ ${screener.units}`}>
+            <div className="stack">
+              <div className="grid cols-2">
+                <Field label="Company name (used across the app)"><input className="input" value={screener.name} maxLength={120} onChange={(e) => setScreener({ ...screener, name: e.target.value })} /></Field>
+                <div className="stack" style={{ gap: 4, fontSize: 13 }}>
+                  <span><b>{screener.lines.filter((l) => l.key).length}</b> lines mapped to standard items; <b>{screener.lines.filter((l) => l.source === 'derived').length}</b> derived (labelled)</span>
+                  <span>Market data: {screener.market.share_price ? 'share price ✓' : 'no share price'} · {screener.market.shares_outstanding ? 'shares outstanding ✓' : 'no share count'}</span>
+                </div>
+              </div>
+              {Object.keys(screener.approximations).length > 0 && (
+                <label className="row" style={{ fontSize: 13, alignItems: 'flex-start', flexWrap: 'nowrap' }}>
+                  <input type="checkbox" checked={screener.approx} onChange={(e) => setScreener({ ...screener, approx: e.target.checked })} />
+                  <span>Add labelled approximations: Screener's <b>Other assets</b> and <b>Other liabilities</b> as current assets and current liabilities{screener.approximations.cogs ? <>, and <b>manufacturing costs</b> as cost of goods sold</> : null}. These enable the liquidity ratios, Altman Z, and the Beneish gross-margin, asset-quality and leverage indices. Each line is marked "approx." so reviewers can see it.</span>
+                </label>
+              )}
+              {screener.notes.map((n) => <div key={n} className="faint" style={{ fontSize: 12.5 }}>{n}</div>)}
+              <div className="row">
+                <button className="btn primary" onClick={() => applyScreener(true)}>Import and save as company</button>
+                <button className="btn" onClick={() => applyScreener(false)}>Import only</button>
+                <button className="btn" onClick={() => setScreener(null)}>Cancel</button>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
 
       {pending && (
         <div className="mt">
@@ -361,4 +423,8 @@ function Editor({ data, setData, items }: { data: Data; setData: (d: Data) => vo
       <Callout tone="info">Blank cells are treated as missing, never as zero. Enter CapEx as a negative (cash-flow convention) or positive amount — it is always treated as an outflow.</Callout>
     </div>
   );
+}
+
+function titleCase(s: string) {
+  return s.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase());
 }

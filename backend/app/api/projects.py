@@ -23,7 +23,8 @@ from ..db.session import get_db
 
 router = APIRouter(prefix="/api", tags=["projects"])
 
-Kind = Literal["dcf", "scenarios", "budget", "statements", "cash_budget", "variance", "ratios", "forecast", "investment"]
+Kind = Literal["dcf", "scenarios", "budget", "statements", "cash_budget", "variance", "ratios", "forecast", "investment", "costing",
+               "accounting", "investments"]
 MAX_SAVED_BYTES = 2 * 1024 * 1024
 
 

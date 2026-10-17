@@ -30,6 +30,7 @@ const RedFlags = lazy(() => import('./pages/RedFlags').then((m) => ({ default: m
 const ModelCheck = lazy(() => import('./pages/ModelCheck').then((m) => ({ default: m.ModelCheck })));
 const Peers = lazy(() => import('./pages/Peers').then((m) => ({ default: m.Peers })));
 const Assistant = lazy(() => import('./pages/Assistant').then((m) => ({ default: m.Assistant })));
+const Costing = lazy(() => import('./pages/Costing').then((m) => ({ default: m.Costing })));
 const SettingsPage = lazy(() => import('./pages/Settings').then((m) => ({ default: m.SettingsPage })));
 
 export function App() {
@@ -61,6 +62,7 @@ function Gate() {
                 <Route path="budgeting" element={<Budgeting />} />
                 <Route path="forecasting" element={<Forecasting />} />
                 <Route path="variance" element={<Variance />} />
+                <Route path="costing" element={<Costing />} />
                 <Route path="statements" element={<Statements />} />
                 <Route path="ratios" element={<Ratios />} />
                 <Route path="cash-flow" element={<CashFlow />} />

@@ -53,6 +53,26 @@ export function fmtScaled(v: number | null | undefined, units: UnitScale, curren
   return suffix ? `${fmtMoney(v, currency, digits)} ${suffix}` : fmtMoney(v, currency, digits);
 }
 
+const UNIT_FACTOR: Record<UnitScale, number> = { units: 1, thousands: 1e3, lakhs: 1e5, crores: 1e7, millions: 1e6, billions: 1e9 };
+
+/** Compact amount that knows the data's unit: 255324 (₹ crores) -> "2.6L Cr", 5,000 (USD millions) -> "5.0B". */
+export function fmtCompactUnits(v: number | null | undefined, units: UnitScale, currency: Currency = 'INR'): string {
+  if (!isNum(v)) return '—';
+  const base = v * UNIT_FACTOR[units];
+  const a = Math.abs(base);
+  const sign = base < 0 ? '−' : '';
+  if (currency === 'INR') {
+    if (a >= 1e12) return `${sign}${(a / 1e12).toFixed(1)}L Cr`;
+    if (a >= 1e7) return `${sign}${(a / 1e7).toFixed(a >= 1e9 ? 0 : 1)} Cr`;
+    if (a >= 1e5) return `${sign}${(a / 1e5).toFixed(1)}L`;
+  }
+  if (a >= 1e12) return `${sign}${(a / 1e12).toFixed(1)}T`;
+  if (a >= 1e9) return `${sign}${(a / 1e9).toFixed(1)}B`;
+  if (a >= 1e6) return `${sign}${(a / 1e6).toFixed(1)}M`;
+  if (a >= 1e3) return `${sign}${(a / 1e3).toFixed(1)}K`;
+  return `${sign}${a.toFixed(a < 10 ? 1 : 0)}`;
+}
+
 /** Compact for chart axes: 1.2K, 3.4M (or L / Cr for INR). */
 export function fmtCompact(v: number | null | undefined, currency: Currency = 'INR'): string {
   if (!isNum(v)) return '—';

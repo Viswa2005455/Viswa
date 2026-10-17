@@ -19,7 +19,8 @@ interface ActivityRow { action: string; label: string; entity_type: string | nul
 const KIND_ROUTE: Record<string, [string, string]> = {
   dcf: ['/dcf', 'DCF model'], scenarios: ['/scenarios', 'Scenarios'], budget: ['/budgeting', 'Budget'], statements: ['/statements', 'Statements'],
   cash_budget: ['/cash-flow', 'Cash budget'], variance: ['/variance', 'Variance'], ratios: ['/ratios', 'Ratios'], forecast: ['/forecasting', 'Forecast'],
-  investment: ['/investment', 'Appraisal'],
+  investment: ['/investment', 'Appraisal'], costing: ['/costing', 'Costing'], accounting: ['/accounting', 'Accounting schedule'],
+  investments: ['/investments', 'Investment analytics'],
 };
 const when = (s: string) => new Date(s).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 

@@ -9,6 +9,10 @@ import type { UploadSummary } from '../lib/types';
 import { useAsync } from '../lib/useApi';
 import { useAuth } from '../lib/auth';
 import { useProjects } from '../lib/project';
+import { useState } from 'react';
+import { CompanyDashboard } from '../components/CompanyDashboard';
+import { useCompanySources } from '../lib/company';
+import { loadRaw } from '../lib/storage';
 
 interface Dashboard {
   is_sample: boolean; company: string; currency: string; units: string; period: string;
@@ -30,7 +34,7 @@ function delta(v: number, prior?: number) {
   return { text: <><Icon size={14} />{fmtPctPoints(Math.abs(pct))} vs prior month</>, tone: pct >= 0 ? 'pos' as const : 'neg' as const };
 }
 
-export function Overview() {
+function SampleOverview({ hasCompanies, onBack }: { hasCompanies: boolean; onBack: () => void }) {
   const dash = useAsync(() => api.get<Dashboard>('/api/dashboard/sample'), []);
   const { user } = useAuth();
   const { active, activeId } = useProjects();
@@ -49,7 +53,7 @@ export function Overview() {
         subtitle={<>The dashboard below uses a <b>fictional sample company</b> to demonstrate the analysis engine. Your own files and saved models live in <Link to="/projects">your projects</Link>{active ? <> — active project: <b>{active.name}</b></> : null}.</>}
         badge={<SampleBadge />}
         actions={<>
-          <Link to="/projects" className="btn">My projects</Link>
+          {hasCompanies ? <button className="btn" onClick={onBack}>Back to my companies</button> : <Link to="/statements" className="btn">Import a company</Link>}
           <Link to="/upload" className="btn primary"><FileUp size={16} />Upload data</Link>
         </>}
       />
@@ -183,6 +187,28 @@ export function Overview() {
             )}
         </Card>
       </div>
+    </div>
+  );
+}
+
+/** Shows the user's own company when one has been imported or saved; the labelled sample otherwise. */
+export function Overview() {
+  const { user } = useAuth();
+  const { sources } = useCompanySources();
+  const [sample, setSample] = useState(false);
+  const real = (sources ?? []).filter((s) => !s.isExample);
+  if (!sources) return <div className="page"><SkeletonCards n={4} /></div>;
+  if (!real.length || sample) return <SampleOverview hasCompanies={real.length > 0} onBack={() => setSample(false)} />;
+  const initial = loadRaw<string>('fis.dashboard.company', '') || real[0].id;
+  return (
+    <div className="page">
+      <PageHeader title={`Welcome back, ${user?.display_name.split(' ')[0] ?? ''}`} badge={<Badge tone="accent">Your data</Badge>}
+        subtitle="Company dashboard built from your imported statements. Every figure is calculated from the source data; missing inputs show as a dash."
+        actions={<>
+          <button className="btn" onClick={() => setSample(true)}>View sample dashboard</button>
+          <Link to="/statements" className="btn primary"><FileUp size={16} />Import a company</Link>
+        </>} />
+      <CompanyDashboard sources={real} initialId={real.some((s) => s.id === initial) ? initial : real[0].id} />
     </div>
   );
 }

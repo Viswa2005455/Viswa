@@ -96,7 +96,7 @@ export function RedFlags() {
             )}
           </Card>
           {company && company.data.periods.length >= 2 && (
-            <Card title="Market data (optional)" subtitle="Needed for the original Altman Z-score and the share-issue test">
+            <Card title="Market data (optional)" subtitle={company.data.items.share_price ? 'Taken from the imported file; type here to override' : 'Needed for the original Altman Z-score and the share-issue test'}>
               <div className="stack" style={{ gap: 8 }}>
                 {company.data.periods.map((p) => (
                   <div key={p} className="grid cols-2" style={{ gap: 8 }}>

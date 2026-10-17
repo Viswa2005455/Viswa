@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { csvCell, fmtCompact, fmtMoney, fmtNum, fmtPct, fmtPctPoints, fmtScaled, parseInputNumber, setNumberStyle, toCSV } from './format';
+import { csvCell, fmtCompact, fmtCompactUnits, fmtMoney, fmtNum, fmtPct, fmtPctPoints, fmtScaled, parseInputNumber, setNumberStyle, toCSV } from './format';
 
 describe('format', () => {
   it('formats decimals and percentage points distinctly', () => {
@@ -41,6 +41,13 @@ describe('format', () => {
     setNumberStyle('international');
     expect(fmtNum(12345678, 0, 'INR')).toBe('12,345,678');
     setNumberStyle('auto');
+  });
+
+  it('compacts amounts that are stored in crores or millions', () => {
+    expect(fmtCompactUnits(255324, 'crores')).toBe('2.6L Cr');
+    expect(fmtCompactUnits(48553, 'crores')).toBe('48553 Cr');
+    expect(fmtCompactUnits(950, 'crores')).toBe('950 Cr');
+    expect(fmtCompactUnits(5000, 'millions', 'USD')).toBe('5.0B');
   });
 
   it('labels amounts stored in lakhs or crores', () => {

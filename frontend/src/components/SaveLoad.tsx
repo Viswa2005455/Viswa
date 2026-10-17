@@ -7,7 +7,8 @@ import { useToast } from '../lib/toast';
 import { Modal } from './Modal';
 import { Badge, Callout, Field, Skeleton } from './ui';
 
-export type SavedKind = 'dcf' | 'scenarios' | 'budget' | 'statements' | 'cash_budget' | 'variance' | 'ratios' | 'forecast' | 'investment';
+export type SavedKind = 'dcf' | 'scenarios' | 'budget' | 'statements' | 'cash_budget' | 'variance' | 'ratios' | 'forecast' | 'investment'
+  | 'costing' | 'accounting' | 'investments';
 interface Item { id: string; kind: SavedKind; name: string; project_id: string | null; latest_version: number; updated_at: string }
 interface Full extends Item { data: Record<string, unknown>; versions: { version: number; note: string; created_at: string; size: number }[] }
 
