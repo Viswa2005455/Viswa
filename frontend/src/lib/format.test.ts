@@ -43,6 +43,12 @@ describe('format', () => {
     setNumberStyle('auto');
   });
 
+  it('never shows negative zero', () => {
+    expect(fmtNum(-0.000001, 2)).toBe('0.00');
+    expect(fmtNum(-0.004, 2)).toBe('0.00');
+    expect(fmtNum(-0.006, 2)).toBe('−0.01');
+  });
+
   it('compacts amounts that are stored in crores or millions', () => {
     expect(fmtCompactUnits(255324, 'crores')).toBe('2.6L Cr');
     expect(fmtCompactUnits(48553, 'crores')).toBe('48553 Cr');

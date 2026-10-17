@@ -157,8 +157,8 @@ export function Learning() {
   const areas = Array.from(new Set(CONCEPTS.map((x) => x.area)));
   return (
     <div className="page">
-      <PageHeader title="Learning Centre" badge={<Badge tone="info">PGDM & CMA prep</Badge>}
-        subtitle="Definitions, formulas, worked examples, common mistakes and practice questions. Learning examples are separate from your financial data." />
+      <PageHeader title="Methodology Library" badge={<Badge tone="info">Reference</Badge>}
+        subtitle="Methodology notes behind every calculation in the app: definitions, formulas, worked examples, common pitfalls and check questions. Examples here are separate from your financial data." />
       <div className="grid cols-3">
         <Card title="Topics">
           {areas.map((a) => (

@@ -137,3 +137,29 @@ def test_ai_status_never_returns_key(client, monkeypatch):
         assert r.json()["configured"] is True and "sk-secret" not in r.text
     finally:
         get_settings.cache_clear()
+
+
+def test_professional_tools_use_the_engines():
+    lease = run_tool("lease_schedule", {"payment": 10000, "periods": 5, "annual_rate": 0.06, "timing": "arrears"})
+    assert round(lease["initial_liability"], 2) == 42123.64 and lease["schedule_periods"] == 5
+    bond = run_tool("bond_amortisation", {"face": 100000, "coupon_rate": 0.08, "market_rate": 0.10, "years": 5, "payments_per_year": 2})
+    assert bond["kind"] == "discount"
+    e = run_tool("eps", {"net_income": 1000, "weighted_shares": 100, "average_price": 10,
+                         "securities": [{"kind": "options", "name": "O", "shares": 10, "exercise_price": 5}]})
+    assert e["diluted"] < e["basic"]
+    m = run_tool("materiality", {"values": {"profit_before_tax": 1_000_000}, "selected": "profit_before_tax", "pct": 0.05})
+    assert m["overall"] == 50_000
+    c = run_tool("cvp", {"products": [{"name": "X", "price": 50, "variable_cost": 30}], "fixed_costs": 40000})
+    assert c["breakeven_units"] == 2000 and "chart" not in c
+    o = run_tool("option_pricing", {"s": 100, "k": 100, "t": 1, "r": 0.05, "sigma": 0.2})
+    assert round(o["black_scholes"]["call"], 4) == 10.4506
+    assert round(run_tool("bond_analytics", {"coupon_rate": 0.1, "years": 3, "freq": 1, "ytm": 0.1})["macaulay_duration"], 4) == 2.7355
+    with pytest.raises(ValueError):
+        run_tool("eps", {"net_income": 1, "weighted_shares": 1, "securities": [{"kind": "options", "name": "O", "shares": 1, "bogus": 1}]})
+
+
+def test_professional_prompt_and_research_mode():
+    assert "CPAs, CFA" in assistant.SYSTEM and "authoritative" in assistant.SYSTEM
+    assert "research" in assistant.MODES and "tutor" not in assistant.MODES
+    names = [t["name"] for t in assistant.TOOLS]
+    assert len(names) == len(set(names)) == 15

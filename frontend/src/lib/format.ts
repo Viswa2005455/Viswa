@@ -34,6 +34,7 @@ export function isNum(v: unknown): v is number {
 
 export function fmtMoney(v: number | null | undefined, currency: Currency = 'INR', digits = 0): string {
   if (!isNum(v)) return '—';
+  if (Math.abs(v) < 0.5 * 10 ** -digits) v = 0;
   const s = new Intl.NumberFormat(locale(currency), {
     style: 'currency', currency, minimumFractionDigits: digits, maximumFractionDigits: currency === 'JPY' ? 0 : digits,
   }).format(Math.abs(v));
@@ -42,6 +43,7 @@ export function fmtMoney(v: number | null | undefined, currency: Currency = 'INR
 
 export function fmtNum(v: number | null | undefined, digits = 2, currency: Currency = 'INR'): string {
   if (!isNum(v)) return '—';
+  if (Math.abs(v) < 0.5 * 10 ** -digits) v = 0; // never show "−0.00" for rounding residue
   const s = new Intl.NumberFormat(locale(currency), { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(Math.abs(v));
   return v < 0 ? `−${s}` : s;
 }

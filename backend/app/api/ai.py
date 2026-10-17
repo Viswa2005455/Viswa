@@ -33,7 +33,7 @@ class AttachmentIn(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    mode: Literal["ask", "red_flags", "model_check", "challenge", "peers", "tutor", "report"] = "ask"
+    mode: Literal["ask", "red_flags", "model_check", "challenge", "peers", "research", "report"] = "ask"
     messages: list[MessageIn] = Field(min_length=1, max_length=40)
     attachments: list[AttachmentIn] = Field(default_factory=list, max_length=10)
     consent: bool = False

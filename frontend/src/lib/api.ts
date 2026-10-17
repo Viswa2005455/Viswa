@@ -55,6 +55,29 @@ export const api = {
   },
 };
 
+/** POST JSON and save the returned file (Excel, Word, …) under the server's suggested name. */
+export async function downloadPost(path: string, data: unknown, fallbackName: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  } catch {
+    throw new ApiError('Cannot reach the backend. Is the API server running on port 8000?', 0);
+  }
+  if (res.status === 401) signalUnauthorized(path);
+  if (!res.ok) {
+    let msg = `Request failed (${res.status}).`;
+    try { const b = await res.json(); if (typeof b?.detail === 'string') msg = b.detail; } catch { /* not JSON */ }
+    throw new ApiError(msg, res.status);
+  }
+  const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? fallbackName;
+  const url = URL.createObjectURL(await res.blob());
+  const a = Object.assign(document.createElement('a'), { href: url, download: name });
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 /** Multipart upload with real byte-level progress (fetch cannot report upload progress). */
 export function uploadWithProgress<T>(path: string, files: File[], onProgress: (fraction: number) => void, fields: Record<string, string | null | undefined> = {}): Promise<T> {
   return new Promise((resolve, reject) => {

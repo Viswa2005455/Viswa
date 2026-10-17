@@ -11,20 +11,21 @@ import type { UploadSummary } from '../lib/types';
 import { useAsync } from '../lib/useApi';
 
 interface AIStatus { configured: boolean; provider: string; model: string | null; message: string; external: boolean }
-type Mode = 'ask' | 'red_flags' | 'model_check' | 'challenge' | 'peers' | 'tutor' | 'report';
+type Mode = 'ask' | 'red_flags' | 'model_check' | 'challenge' | 'peers' | 'research' | 'report';
 interface Msg { role: 'user' | 'assistant'; content: string; tools?: { name: string; ok: boolean }[]; cost?: number | null; model?: string }
 interface Reply { reply: string; stop_reason: string; model: string; tools_used: { name: string; ok: boolean }[]; usage: { input_tokens: number; output_tokens: number; estimated_cost_usd: number | null } }
 
 const MODES: { value: Mode; label: string; hint: string; prompts: string[] }[] = [
-  { value: 'ask', label: 'Ask about my data', hint: 'Questions about your statements, DCF or files', prompts: ['Summarise this company’s performance over the years.', 'Why did return on equity change?', 'Is the company’s working capital improving?'] },
-  { value: 'red_flags', label: 'Explain red flags', hint: 'What the Beneish, Altman and Piotroski results mean', prompts: ['Explain my red-flag results in simple words.', 'Which warning sign should I investigate first, and where in the annual report?'] },
-  { value: 'model_check', label: 'Explain model check', hint: 'Fixes for the Excel model checker’s findings', prompts: ['Explain the most serious issues and how to fix them in Excel.', 'Rewrite the formulas that have typed-in numbers.'] },
-  { value: 'challenge', label: 'Challenge my DCF', hint: 'A reviewer questions your assumptions', prompts: ['Challenge my DCF assumptions against the company’s history.', 'What growth does my valuation really need, and is it realistic?'] },
-  { value: 'peers', label: 'Peer insights', hint: 'Who leads, and why', prompts: ['Which company is strongest, and what are the trade-offs?', 'Which differences might be caused by accounting rather than performance?'] },
-  { value: 'tutor', label: 'CMA tutor', hint: 'Concepts, worked examples and practice questions', prompts: ['Explain material price and usage variances with an example.', 'Teach me WACC step by step, then give me a practice question.', 'Explain the difference between marginal and absorption costing.'] },
-  { value: 'report', label: 'Report draft', hint: 'A structured company report for you to edit', prompts: ['Draft a company-analysis report from the attached data.'] },
+  { value: 'ask', label: 'Analyse my data', hint: 'Questions on statements, models and files', prompts: ['Summarise the trend in margins and returns, with the drivers.', 'What explains the change in ROE over the period (DuPont)?', 'Assess working-capital efficiency and cash conversion.'] },
+  { value: 'red_flags', label: 'Earnings quality review', hint: 'Interpret the Beneish, Altman and Piotroski results', prompts: ['Interpret the red-flag results and rank the follow-ups by priority.', 'Which notes to the accounts should I review first, and what would resolve each flag?'] },
+  { value: 'model_check', label: 'Model review', hint: 'Review notes on the Excel model checker findings', prompts: ['Write review notes for the high-severity issues with suggested fixes.', 'Propose formula rewrites for the hard-coded inputs.'] },
+  { value: 'challenge', label: 'Challenge the valuation', hint: 'Stress the DCF assumptions against history', prompts: ['Challenge the DCF assumptions against the historical data.', 'What growth and margin does the market price imply, and is it supportable?'] },
+  { value: 'peers', label: 'Peer benchmarking', hint: 'Relative performance and comparability', prompts: ['Benchmark the companies and explain the key differences.', 'Which differences may reflect accounting policy rather than performance?'] },
+  { value: 'research', label: 'Technical research', hint: 'US GAAP / IFRS / Ind AS treatment with schedules', prompts: ['How should a lessee account for a 5-year lease with annual payments of 10,000 in advance at 6%? Show the schedule and entries under ASC 842 and IFRS 16.', 'Compute basic and diluted EPS: net income 1,000,000; preferred dividends 100,000; 500,000 weighted shares; 50,000 options at 20 with an average price of 25.', 'Explain the deferred tax on a PPE carrying amount of 100,000 with a tax base of 70,000 at 25%.'] },
+  { value: 'report', label: 'Analysis memo', hint: 'Structured draft for review and editing', prompts: ['Draft a company-analysis memo from the attached data.'] },
 ];
-const TOOL_LABEL: Record<string, string> = { ratio_analysis: 'Ratio engine', red_flag_scan: 'Red-flag scan', peer_compare: 'Peer comparison', dcf_value: 'DCF', reverse_dcf: 'Reverse DCF', npv_irr: 'NPV / IRR', cost_of_capital: 'CAPM / WACC' };
+const TOOL_LABEL: Record<string, string> = { ratio_analysis: 'Ratio engine', red_flag_scan: 'Red-flag scan', peer_compare: 'Peer comparison', dcf_value: 'DCF', reverse_dcf: 'Reverse DCF', npv_irr: 'NPV / IRR', cost_of_capital: 'CAPM / WACC',
+  lease_schedule: 'Lease schedule', bond_amortisation: 'Bond amortisation', eps: 'EPS', deferred_tax: 'Deferred tax', materiality: 'Materiality', cvp: 'CVP', bond_analytics: 'Bond analytics', option_pricing: 'Option pricing' };
 const TOPIC_MODE: Record<string, Mode> = { 'red-flags': 'red_flags', 'model-check': 'model_check', peers: 'peers', dcf: 'challenge' };
 
 export function Assistant() {
@@ -117,7 +118,7 @@ export function Assistant() {
   return (
     <div className="page">
       <PageHeader title="AI Finance Assistant" badge={configured ? <Badge tone="accent">Claude {status.data?.model === 'claude-opus-5-5' ? 'Opus 5.5' : status.data?.model}</Badge> : <Badge tone="warn">Not set up</Badge>}
-        subtitle="Ask questions about your analysis in plain English. The assistant uses the app's tested calculators for every number and tells you where each figure came from."
+        subtitle="An analyst that works from your data and the app's tested calculators: every figure is computed by the engine and cited to its source, and accounting answers name the applicable standard."
         actions={msgs.length > 0 && <button className="btn" onClick={() => { setMsgs([]); setError(null); }}><RotateCcw size={15} />New conversation</button>} />
 
       {status.loading ? <Skeleton h={60} /> : !configured && (
@@ -167,7 +168,7 @@ export function Assistant() {
               <li>Your question and the ticked data are sent to Anthropic (Claude) only when you tick the consent box, for that one question.</li>
               <li>Numbers come from the app's calculators (shown as "Used: …" under each answer).</li>
               <li>Answers can still contain mistakes. Check important figures against the source.</li>
-              <li>Educational analysis, not investment advice.</li>
+              <li>Conclusions on accounting treatment must be confirmed against the authoritative literature and the entity's facts.</li>
             </ul>
           </Card>
         </div>

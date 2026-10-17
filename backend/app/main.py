@@ -19,14 +19,14 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from .ai.provider import get_provider
-from .api import ai, analysis, auth, costing, dashboard, finance, planning, projects, uploads
+from .api import accounting, ai, analysis, auth, costing, dashboard, finance, investments, planning, projects, reports, uploads
 from .auth.deps import current_user
 from .config import get_settings
 from .db.session import session_factory
 from .files.service import purge_expired
 from .finance import FinanceInputError
 
-VERSION = "0.8.0"
+VERSION = "0.9.0"
 log = logging.getLogger("fis")
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
@@ -146,6 +146,9 @@ app.include_router(dashboard.router, dependencies=protected)
 app.include_router(analysis.router, dependencies=protected)
 app.include_router(ai.router, dependencies=protected)
 app.include_router(costing.router, dependencies=protected)
+app.include_router(accounting.router, dependencies=protected)
+app.include_router(investments.router, dependencies=protected)
+app.include_router(reports.router)
 
 
 @app.api_route("/api/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)

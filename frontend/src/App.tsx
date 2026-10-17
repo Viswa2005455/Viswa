@@ -4,7 +4,7 @@ import { Layout } from './components/Layout';
 import { DCFModelProvider } from './lib/dcfModel';
 import { SettingsProvider } from './lib/settings';
 import { ToastProvider } from './lib/toast';
-import { CodeLab, Reports } from './pages/Planned';
+import { CodeLab } from './pages/Planned';
 import { AuthProvider, useAuth } from './lib/auth';
 import { ProjectProvider } from './lib/project';
 import { AuthScreen } from './pages/Auth';
@@ -31,6 +31,9 @@ const ModelCheck = lazy(() => import('./pages/ModelCheck').then((m) => ({ defaul
 const Peers = lazy(() => import('./pages/Peers').then((m) => ({ default: m.Peers })));
 const Assistant = lazy(() => import('./pages/Assistant').then((m) => ({ default: m.Assistant })));
 const Costing = lazy(() => import('./pages/Costing').then((m) => ({ default: m.Costing })));
+const Accounting = lazy(() => import('./pages/Accounting').then((m) => ({ default: m.Accounting })));
+const Investments = lazy(() => import('./pages/Investments').then((m) => ({ default: m.Investments })));
+const Reports = lazy(() => import('./pages/Reports').then((m) => ({ default: m.Reports })));
 const SettingsPage = lazy(() => import('./pages/Settings').then((m) => ({ default: m.SettingsPage })));
 
 export function App() {
@@ -63,6 +66,8 @@ function Gate() {
                 <Route path="forecasting" element={<Forecasting />} />
                 <Route path="variance" element={<Variance />} />
                 <Route path="costing" element={<Costing />} />
+                <Route path="accounting" element={<Accounting />} />
+                <Route path="investments" element={<Investments />} />
                 <Route path="statements" element={<Statements />} />
                 <Route path="ratios" element={<Ratios />} />
                 <Route path="cash-flow" element={<CashFlow />} />

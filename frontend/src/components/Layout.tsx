@@ -13,7 +13,7 @@ export function Layout() {
   const [open, setOpen] = useState(false);
   const { settings, update, resolvedTheme } = useSettings();
   const loc = useLocation();
-  const current = NAV.find((n) => (n.to === '/' ? loc.pathname === '/' : loc.pathname.startsWith(n.to)));
+  const current = NAV.find((n) => (n.to === '/' ? loc.pathname === '/' : loc.pathname === n.to || loc.pathname.startsWith(`${n.to}/`)));
   const [apiOk, setApiOk] = useState<boolean | null>(null);
   const { user, logout } = useAuth();
   const { projects, activeId, setActive } = useProjects();

@@ -2,7 +2,7 @@
 
 This file is the source of truth for progress. Update it at the end of every working session so development can resume reliably.
 
-_Last updated: 2026-10-16 (session 6)_
+_Last updated: 2026-10-17 (session 7)_
 
 ## Environment found at the start
 
@@ -20,9 +20,40 @@ _Last updated: 2026-10-16 (session 6)_
 | 3. Core analysis | Forecasting ✅, Variance ✅, Ratios ✅, Budgeting ✅, Financial Statements ✅, Cash Flow & Working Capital ✅ | ✅ Done |
 | 4. Advanced finance | Scenarios ✅, Sensitivity (2-way, 1-way, tornado, break-even) ✅, DCF ✅, WACC/CAPM ✅, NPV/IRR/MIRR/payback/PI/EAA ✅ | ✅ Done |
 | 5. Data & Code Lab | Editor, explanations, sandboxed execution | ⏳ Not started (uploads already provide syntax checks and outlines) |
-| 6. AI & reports | AI assistant ✅ (Claude Opus 5.5 with finance tools, consent per question), Excel/PDF/Word report generation ⏳ | 🟡 Partly done (assistant done; report exports not started; the AI can draft a report as text) |
+| 6. AI & reports | AI assistant ✅ (Claude Opus 5.5, 15 engine tools, consent per question), Excel (live formulas) / Word / PDF report packs ✅ | ✅ Done |
 | 7. Persistence & security | Accounts (scrypt, server-side sessions, CSRF/origin check, rate limits), PostgreSQL + Alembic, projects, saved models with versions, history, per-user isolation, retention purge, export and deletion | ✅ Done |
 | 8. Final QA | Full accessibility audit, performance, deployment hardening | ⏳ Ongoing per phase |
+
+## Session 7: professional modules (v0.9.0)
+
+The app is now aimed at practising professionals: CPAs, CFA charterholders, CMAs and auditors.
+- **Screener.in import** (`app/files/screener.py`):
+  - Parses the "Data Sheet" by its labels.
+  - Imports ten years of P&L, balance sheet and cash flow, plus share price and adjusted shares, with cell references.
+  - The quarterly block is skipped.
+  - Derived lines are labelled; approximations for current assets/liabilities and COGS are opt-in and labelled.
+- **Company dashboard** (`app/finance/profile.py`, `components/CompanyDashboard.tsx`) replaces the sample when a company exists; unit-aware amounts (e.g. 2.6L Cr).
+- **Cost & Management Accounting** (`app/finance/costing.py`): standard-cost variances with reconciliation checks, CVP, absorption vs marginal costing, limiting factor.
+- **Accounting & Audit** (`app/finance/accounting.py`): bonds, leases (ASC 842 / IFRS 16), depreciation, EPS, deferred tax and materiality, all with journal entries; every entry is tested to balance.
+- **Investment Analytics** (`app/finance/investments.py`): fixed income, equity models, portfolio and performance analytics, options (BSM, binomial, parity, strategies).
+- **Reports & Exports** (`app/reports/builder.py`):
+  - Excel pack with live formulas and `fullCalcOnLoad`.
+  - Word report.
+  - Print/PDF view.
+- **AI:** professional system prompt, a technical research mode (standards cited, confirm against authoritative literature) and 8 new tools (15 total).
+- Learning Centre renamed Methodology Library; grid items no longer overflow on phones; negative zero never shown.
+- **Verified:**
+  - 229 backend tests pass on PostgreSQL, including known answers:
+    - BSM 10.4506 / 5.5735; Macaulay duration 2.7355; Gordon 42;
+    - bond price 92,278.26; lease liability 42,123.64; EPS antidilution;
+    - textbook variances, CVP and absorption reconciliation.
+  - The report tests recalculate the generated Excel with the app's formula evaluator and match the DCF and ratio engines exactly. LibreOffice recalculation of a downloaded pack also matched.
+  - 10 frontend tests pass; the build is clean.
+  - Browser checks:
+    - all 24 pages in dark and light themes with no console errors;
+    - no horizontal overflow at 390 px;
+    - end to end: Screener upload → import → dashboard → red flags → Excel/Word download → PDF print.
+- **Not verified:** a real Screener export (the parser was built from the published layout and a faithful fixture; the user's own file is its live test), and a real Claude API call (no key here).
 
 ## Session 6: unique analysis features and the AI assistant (v0.8.0)
 
@@ -132,16 +163,17 @@ _Last updated: 2026-10-16 (session 6)_
   - Financing is drawn to restore the minimum balance, but repayment and interest are not modelled.
 - **Saving:** Forecasting and Investment Appraisal have no Save/Open yet. Saving on the other seven model pages is explicit; unsaved edits live only in this browser.
 - The currency selector changes labels only; no FX conversion is performed.
-- The Overview dashboard still shows the fictional sample company; a per-project dashboard built from saved models is a future step.
+- The company dashboard covers saved companies; budgets, forecasts and other saved models are not yet summarised on it.
+- Screener import reads annual data only (quarterly results are skipped).
+- The accounting schedules assume settlement on period dates (no stub periods or accrued interest between coupon dates), and lease modifications/remeasurements are not modelled.
 
 ## Next steps (in order)
 
-1. **Phase 6 remainder: Reports & Exports.** Excel (live formulas), PDF and Word exports of analyses and of the AI report draft.
-2. **Phase 5: Data & Code Lab.**
+1. **Phase 5: Data & Code Lab.**
    - Editor with a diff view.
    - Python/SQL/Java explanations.
    - Docker-based sandbox execution with no network, CPU/memory/time/output limits, and explicit approval for every run.
-3. **Phase 8: hardening.**
+2. **Phase 8: hardening.**
    - PostgreSQL row-level security, a shared rate limiter, password reset by email, and MFA.
    - Full WCAG 2.1 AA audit, a performance budget, a deployment guide with HTTPS, and a dependency audit in CI.
 
