@@ -26,7 +26,7 @@ from .db.session import session_factory
 from .files.service import purge_expired
 from .finance import FinanceInputError
 
-VERSION = "0.9.0"
+VERSION = "0.9.1"
 log = logging.getLogger("fis")
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 

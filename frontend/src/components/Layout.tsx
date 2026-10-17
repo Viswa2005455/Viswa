@@ -57,17 +57,17 @@ export function Layout() {
             ];
           })}
         </nav>
-        <div style={{ marginTop: 'auto' }}>
-          <div style={{ padding: '8px 18px', fontSize: 12 }} className="faint">
-            <span className={`status-dot ${apiOk ? 'ok' : apiOk === false ? 'bad' : ''}`} />{' '}
+        <div className="sidebar-foot">
+          <div className="api-pill">
+            <span className={`status-dot ${apiOk ? 'ok' : apiOk === false ? 'bad' : ''}`} />
             {apiOk === null ? 'Checking API…' : apiOk ? 'API connected' : 'API offline'}
           </div>
           {user && (
             <div className="user-chip">
               <div className="avatar" aria-hidden="true">{user.display_name.slice(0, 1).toUpperCase()}</div>
               <div style={{ minWidth: 0, flex: 1 }}>
-                <div className="truncate" style={{ fontWeight: 600, fontSize: 13 }}>{user.display_name}</div>
-                <div className="truncate faint" style={{ fontSize: 11.5 }}>{user.email}</div>
+                <div className="truncate who">{user.display_name}</div>
+                <div className="truncate mail">{user.email}</div>
               </div>
               <button className="btn icon sm ghost" aria-label="Sign out" title="Sign out" onClick={logout}><LogOut size={16} /></button>
             </div>
@@ -78,7 +78,10 @@ export function Layout() {
       <div className="main">
         <header className="topbar">
           <button className="btn icon ghost menu-btn" aria-label="Open navigation" onClick={() => setOpen(true)}><Menu size={20} /></button>
-          <div className="topbar-title">{current?.label ?? 'Not found'}</div>
+          <div className="topbar-title">
+            {current && <><span className="crumb hide-sm">{current.group}</span><span className="crumb-sep hide-sm" aria-hidden="true">/</span></>}
+            <span className="here">{current?.label ?? 'Not found'}</span>
+          </div>
           <div className="topbar-spacer" />
           <div className="topbar-controls">
             <select className="input compact project-select" aria-label="Active project" value={activeId ?? ''}

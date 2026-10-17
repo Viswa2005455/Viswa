@@ -1,4 +1,4 @@
-import { Activity, LockKeyhole, ShieldCheck } from 'lucide-react';
+import { Activity, FileSpreadsheet, Landmark, LockKeyhole, ShieldAlert, ShieldCheck, Sigma } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Callout } from '../components/ui';
 import { api } from '../lib/api';
@@ -39,16 +39,41 @@ export function AuthScreen() {
   return (
     <div className="auth-screen">
       <div className="app-bg" aria-hidden="true" />
+      <aside className="auth-showcase" aria-hidden="true">
+        <div className="auth-showcase-brand">
+          <div className="brand-mark" style={{ width: 42, height: 42, borderRadius: 12 }}><Activity size={22} strokeWidth={2.5} /></div>
+          <div>
+            <div className="brand-name" style={{ fontSize: 16 }}>Finance Intelligence</div>
+            <div className="brand-sub">Studio</div>
+          </div>
+        </div>
+        <div>
+          <h2 className="auth-headline">Analysis you can <span>defend</span></h2>
+          <p className="auth-lede">Formulas and inputs shown next to every result. Built for CPAs, CFA charterholders, CMAs and auditors.</p>
+          <ul className="auth-features">
+            <li><ShieldAlert size={17} /><div><b>Forensic screens</b><span>Beneish M-score, Altman Z, Piotroski F and cash-quality checks</span></div></li>
+            <li><Landmark size={17} /><div><b>Valuation</b><span>DCF, reverse DCF, Monte Carlo ranges and peer comparison</span></div></li>
+            <li><Sigma size={17} /><div><b>Professional schedules</b><span>Leases, bonds, EPS, deferred tax, costing and derivatives</span></div></li>
+            <li><FileSpreadsheet size={17} /><div><b>Audit-ready exports</b><span>Excel with live formulas, Word and PDF reports</span></div></li>
+          </ul>
+        </div>
+        <svg className="auth-chart" viewBox="0 0 480 140" fill="none">
+          <defs><linearGradient id="authArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#34d399" stopOpacity=".35" /><stop offset="1" stopColor="#34d399" stopOpacity="0" /></linearGradient></defs>
+          <path d="M0 120 C40 112 70 96 110 102 S170 70 210 78 S280 40 320 50 S400 18 480 10 V140 H0Z" fill="url(#authArea)" />
+          <path d="M0 120 C40 112 70 96 110 102 S170 70 210 78 S280 40 320 50 S400 18 480 10" stroke="#6ee7b7" strokeWidth="2.5" />
+          <path d="M0 128 C60 124 100 116 150 118 S240 100 300 98 S400 80 480 70" stroke="#818cf8" strokeWidth="1.8" strokeDasharray="5 6" />
+        </svg>
+      </aside>
       <div className="auth-wrap">
         <div className="auth-brand">
           <div className="brand-mark" style={{ width: 44, height: 44, borderRadius: 13 }}><Activity size={24} strokeWidth={2.5} /></div>
           <div>
-            <div style={{ fontWeight: 700, fontSize: 20 }}>Finance Intelligence Studio</div>
+            <div style={{ fontWeight: 750, fontSize: 20, fontFamily: 'var(--font-display)' }}>Finance Intelligence Studio</div>
             <div className="muted">FP&amp;A, valuation and financial analysis</div>
           </div>
         </div>
         <form className="card auth-card" onSubmit={submit} noValidate>
-          <h1 style={{ fontSize: 20 }}>{mode === 'login' ? 'Sign in' : 'Create your account'}</h1>
+          <h1 style={{ fontSize: 24 }}>{mode === 'login' ? 'Sign in' : 'Create your account'}</h1>
           <p className="muted" style={{ marginTop: 4 }}>{mode === 'login' ? 'Your projects, files and models are private to your account.' : 'Accounts keep each person\'s files and models separate.'}</p>
           {expired && mode === 'login' && <div className="mt"><Callout tone="info">Your session ended. Please sign in again.</Callout></div>}
           {apiDown && <div className="mt"><Callout tone="error" title="Cannot reach the server">Start the backend: <code>cd backend &amp;&amp; uv run uvicorn app.main:app --reload</code></Callout></div>}

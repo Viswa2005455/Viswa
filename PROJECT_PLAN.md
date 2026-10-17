@@ -24,6 +24,17 @@ _Last updated: 2026-10-17 (session 7)_
 | 7. Persistence & security | Accounts (scrypt, server-side sessions, CSRF/origin check, rate limits), PostgreSQL + Alembic, projects, saved models with versions, history, per-user isolation, retention purge, export and deletion | ✅ Done |
 | 8. Final QA | Full accessibility audit, performance, deployment hardening | ⏳ Ongoing per phase |
 
+## Visual refresh (v0.9.1)
+
+- Ink-navy sidebar in both themes, with a glowing active-item marker and grouped navigation.
+- Aurora background (emerald, indigo and cyan glows, a fading dot texture and fine grain), static with no motion.
+- Page headers are hero panels with a quiet chart illustration.
+- Breadcrumb in the top bar.
+- Plus Jakarta Sans for headings; Inter is kept for data.
+- Gradient primary buttons, KPI cards with an accent bar and delta pills.
+- Split sign-in screen with a brand panel listing the real modules.
+- Verified: all 24 routes load in light and dark with no console errors; no horizontal overflow at phone width.
+
 ## Session 7: professional modules (v0.9.0)
 
 The app is now aimed at practising professionals: CPAs, CFA charterholders, CMAs and auditors.
