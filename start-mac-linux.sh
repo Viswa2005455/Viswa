@@ -28,8 +28,17 @@ fi
 echo "[2/5] Node.js is installed ($(node --version))."
 
 # Use PostgreSQL if backend/.env or the environment sets DATABASE_URL; otherwise a local database file.
+# backend/.env copied from .env.example may still carry the example PostgreSQL line; if that example
+# server is not running, use the local database file instead.
+if [ -z "${DATABASE_URL:-}" ] && grep -q '^DATABASE_URL=postgresql+psycopg://fis_app:fis_dev_password@localhost:5432/' backend/.env 2>/dev/null \
+   && ! (exec 3<>/dev/tcp/127.0.0.1/5432) 2>/dev/null; then
+  echo "      Note: backend/.env has the example PostgreSQL line, but PostgreSQL is not running."
+  export DATABASE_URL="sqlite:///storage/finance_studio.db"
+fi
 if [ -z "${DATABASE_URL:-}" ] && ! grep -qi '^DATABASE_URL' backend/.env 2>/dev/null; then
   export DATABASE_URL="sqlite:///storage/finance_studio.db"
+  echo "      Database: local file backend/storage/finance_studio.db"
+elif [ "${DATABASE_URL:-}" = "sqlite:///storage/finance_studio.db" ]; then
   echo "      Database: local file backend/storage/finance_studio.db"
 else
   echo "      Database: PostgreSQL (DATABASE_URL)"
@@ -41,11 +50,13 @@ echo "[4/5] Preparing the database..."
 (cd backend && uv run alembic upgrade head)
 
 # The marker is written only after a complete install, so an interrupted download is retried.
-if [ ! -f frontend/node_modules/.fis-installed ]; then
+# It holds a fingerprint of package-lock.json, so a version that needs new packages installs them.
+lock_id="$(cksum < frontend/package-lock.json)"
+if [ "$(cat frontend/node_modules/.fis-installed 2>/dev/null)" != "$lock_id" ]; then
   for attempt in 1 2 3 4; do
     echo "[5/5] Installing website packages - attempt $attempt of 4 (the first time takes a few minutes)..."
     if (cd frontend && npm install); then
-      touch frontend/node_modules/.fis-installed
+      cksum < frontend/package-lock.json > frontend/node_modules/.fis-installed  # npm may rewrite the lock file
       break
     fi
     if [ "$attempt" = 4 ]; then

@@ -12,7 +12,7 @@ _LOCAL_ORIGIN = re.compile(r"http://(?:localhost|127\.0\.0\.1|\[::1\])(?::\d{1,5
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=BACKEND_DIR / ".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=BACKEND_DIR / ".env", env_file_encoding="utf-8-sig", extra="ignore")
 
     fis_env: str = "development"
     fis_cors_origins: str = "http://localhost:5173"

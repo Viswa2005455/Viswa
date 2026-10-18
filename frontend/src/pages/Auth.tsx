@@ -15,10 +15,16 @@ export function AuthScreen() {
   const [registrationOpen, setRegistrationOpen] = useState(true);
   const [apiDown, setApiDown] = useState(false);
 
+  // Keep checking while the backend is still starting (or was started late) and clear the warning
+  // as soon as it answers, so nobody has to reload the page.
   useEffect(() => {
-    api.get<{ registration_open: boolean }>('/api/auth/config')
-      .then((c) => setRegistrationOpen(c.registration_open))
-      .catch(() => setApiDown(true));
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const check = () => api.get<{ registration_open: boolean }>('/api/auth/config')
+      .then((c) => { if (!alive) return; setRegistrationOpen(c.registration_open); setApiDown(false); setError(null); })
+      .catch(() => { if (!alive) return; setApiDown(true); timer = setTimeout(check, 3000); });
+    check();
+    return () => { alive = false; clearTimeout(timer); };
   }, []);
   useEffect(() => { document.title = `${mode === 'login' ? 'Sign in' : 'Create account'} · Finance Intelligence Studio`; }, [mode]);
 
@@ -76,7 +82,15 @@ export function AuthScreen() {
           <h1 style={{ fontSize: 24 }}>{mode === 'login' ? 'Sign in' : 'Create your account'}</h1>
           <p className="muted" style={{ marginTop: 4 }}>{mode === 'login' ? 'Your projects, files and models are private to your account.' : 'Accounts keep each person\'s files and models separate.'}</p>
           {expired && mode === 'login' && <div className="mt"><Callout tone="info">Your session ended. Please sign in again.</Callout></div>}
-          {apiDown && <div className="mt"><Callout tone="error" title="Cannot reach the server">Start the backend: <code>cd backend &amp;&amp; uv run uvicorn app.main:app --reload</code></Callout></div>}
+          {apiDown && (
+            <div className="mt">
+              <Callout tone="warn" title="Waiting for the app's backend…">
+                This page connects by itself once the backend is ready. Starting can take a minute the first time.
+                If it does not connect, look at the window titled <b>Finance Studio - BACKEND</b>: if it shows an error, send a screenshot of it.
+                If that window is closed, double-click <code>start-windows.bat</code> again.
+              </Callout>
+            </div>
+          )}
           <div className="stack mt" style={{ gap: 12 }}>
             {mode === 'register' && (
               <div className="field"><label className="field-label" htmlFor="auth-name">Your name</label>
@@ -89,7 +103,7 @@ export function AuthScreen() {
               {mode === 'register' && <div className="field-hint">At least 10 characters, not a common password, and not containing your email name.</div>}
             </div>
             {error && <Callout tone="error">{error}</Callout>}
-            <button className="btn primary" type="submit" disabled={busy || !email || !password || (mode === 'register' && !name.trim())} style={{ height: 40 }}>
+            <button className="btn primary" type="submit" disabled={busy || apiDown || !email || !password || (mode === 'register' && !name.trim())} style={{ height: 40 }}>
               <LockKeyhole size={16} />{busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
             </button>
           </div>

@@ -14,12 +14,14 @@ function signalUnauthorized(path: string) {
   if (!path.startsWith('/api/auth/')) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
 }
 
+const BACKEND_DOWN = 'The app\'s backend is not answering. Check the "Finance Studio - BACKEND" window: if it is closed, run start-windows.bat again; if it shows an error, send a screenshot of it.';
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
     res = await fetch(path, init);
   } catch {
-    throw new ApiError('Cannot reach the backend. Is the API server running on port 8000?', 0);
+    throw new ApiError(BACKEND_DOWN, 0);
   }
   const text = await res.text();
   let body: unknown = null;
@@ -32,7 +34,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     const detail = (body as { detail?: unknown } | null)?.detail;
     const msg = typeof detail === 'string' ? detail : res.status === 502 || res.status === 504 || res.status === 500 && !body
-      ? 'The backend is not responding. Start it with: cd backend && uv run uvicorn app.main:app --reload'
+      ? BACKEND_DOWN
       : `Request failed (${res.status}).`;
     throw new ApiError(msg, res.status);
   }
@@ -61,7 +63,7 @@ export async function downloadPost(path: string, data: unknown, fallbackName: st
   try {
     res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
   } catch {
-    throw new ApiError('Cannot reach the backend. Is the API server running on port 8000?', 0);
+    throw new ApiError(BACKEND_DOWN, 0);
   }
   if (res.status === 401) signalUnauthorized(path);
   if (!res.ok) {

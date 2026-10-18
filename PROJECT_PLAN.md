@@ -24,6 +24,15 @@ _Last updated: 2026-10-17 (session 7)_
 | 7. Persistence & security | Accounts (scrypt, server-side sessions, CSRF/origin check, rate limits), PostgreSQL + Alembic, projects, saved models with versions, history, per-user isolation, retention purge, export and deletion | ✅ Done |
 | 8. Final QA | Full accessibility audit, performance, deployment hardening | ⏳ Ongoing per phase |
 
+## Start-up fixes (v0.9.2)
+
+- `.env.example` no longer sets `DATABASE_URL`. A `backend/.env` copied from it (for the AI key) made the launchers expect a PostgreSQL server that most PCs do not have, so the backend never started.
+- If an existing `backend/.env` still has the example PostgreSQL line and nothing listens on port 5432, both launchers fall back to the local database file and say so.
+- `backend/.env` is read as UTF-8 with or without a BOM, which is how Windows Notepad may save it.
+- The website-package marker now stores a fingerprint of `package-lock.json`, so an update that adds packages installs them even over an older `node_modules`.
+- The Windows launcher waits up to 3 minutes for the backend and explains what to check.
+- The sign-in page keeps retrying while the backend is starting and clears the warning by itself. Plain-English messages name the BACKEND window instead of developer commands.
+
 ## Visual refresh (v0.9.1)
 
 - Ink-navy sidebar in both themes, with a glowing active-item marker and grouped navigation.
