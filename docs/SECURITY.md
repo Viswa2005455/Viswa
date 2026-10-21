@@ -29,6 +29,9 @@
 | Hosting | One container serves the website and the API on one address. Requests over `FIS_MAX_REQUEST_MB` are rejected with 413 before they are read, including chunked bodies. The built-website route resolves paths and serves only files inside the build folder. API docs (`/docs`, `/openapi.json`) are off in production. Uploaded files are stored in PostgreSQL (`upload_blobs`) and deleted with their upload record |
 | AI privacy | The AI assistant is off unless `FIS_AI_PROVIDER=anthropic` and a key are set on the server. Each question needs a consent tick that lists the data being sent, and the tick resets after every question; the server refuses requests without consent. Attached data is size-limited (300 KB), framed to the model as data rather than instructions, and the AI's reply is rendered as text (no HTML). The model calls the app's calculators as tools and cannot read files, the database or other users' data. Requests are rate-limited (60 per user per hour) and logged in the user's history (mode and attachment names only, not content) |
 
+| Tax and GST files | Sales registers, purchase registers, GSTR-2B and price files sent to the Income Tax / GST / Markets tools are read in memory for that request and never stored. They pass the same size limit, extension check and zip-container checks as uploads, and are rate-limited (120 files per user per hour) |
+| Market data | The provider API key (`FIS_MARKET_API_KEY`) is read with `SecretStr` and used only by the server; the browser receives quotes and prices, never the key. Symbols are validated against a strict pattern before any outbound call, the provider host is fixed in code (no user-supplied URLs), responses are cached in memory, and requests are limited to 300 per user per hour |
+
 ## Not yet implemented
 
 - PostgreSQL row-level security (defence in depth on top of the application-level `user_id` filters).
@@ -38,6 +41,7 @@
 - Malware scanning of uploads.
 - Sandboxed code execution (Phase 5).
 - The AI provider (Anthropic) receives the question and the data the user ticked; check Anthropic's data-retention terms for your account before sending confidential documents.
+- Tax and GST returns are prepared, not filed: direct filing needs registration as an Income Tax e-Return Intermediary or a GST Suvidha Provider partnership.
 - Dependency vulnerability scanning in CI. On 21 Oct 2026 `npm audit --omit=dev` and `pip-audit` (on the locked production dependencies) reported no known vulnerabilities after Pillow was upgraded to 13.0.0. This must be repeated regularly.
 
 ## Deployment checklist

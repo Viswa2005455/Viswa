@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, FolderKanban, Wallet, TrendingUp, GitCompareArrows, FileSpreadsheet, Percent, Layers, SlidersHorizontal,
-  Calculator, Landmark, Droplets, UploadCloud, Code2, Bot, FileText, GraduationCap, Settings as SettingsIcon, ShieldAlert, Users, FileSearch, Factory, BookOpenCheck, LineChart,
+  Calculator, Landmark, Droplets, UploadCloud, Code2, Bot, FileText, GraduationCap, Settings as SettingsIcon, ShieldAlert, Users, FileSearch, Factory, BookOpenCheck, LineChart, ChartCandlestick, Receipt, ReceiptIndianRupee,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -26,6 +26,9 @@ export const NAV: NavItem[] = [
   { to: '/dcf', label: 'DCF Valuation', icon: Landmark, ready: true, group: 'Valuation & risk' },
   { to: '/investment', label: 'Investment Appraisal', icon: Calculator, ready: true, group: 'Valuation & risk' },
   { to: '/investments', label: 'Investment Analytics', icon: LineChart, ready: true, group: 'Valuation & risk' },
+  { to: '/markets', label: 'Markets & Risk', icon: ChartCandlestick, ready: true, group: 'Valuation & risk' },
+  { to: '/income-tax', label: 'Income Tax', icon: ReceiptIndianRupee, ready: true, group: 'Tax & compliance' },
+  { to: '/gst', label: 'GST Returns', icon: Receipt, ready: true, group: 'Tax & compliance' },
   { to: '/model-check', label: 'Excel Model Checker', icon: FileSearch, ready: true, group: 'Tools' },
   { to: '/code-lab', label: 'Data & Code Lab', icon: Code2, ready: false, group: 'Tools' },
   { to: '/assistant', label: 'AI Finance Assistant', icon: Bot, ready: true, group: 'Tools' },

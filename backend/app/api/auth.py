@@ -185,7 +185,6 @@ def delete_account(body: ConfirmIn, response: Response, user: User = Depends(cur
     """Permanently delete the account and everything in it."""
     if not verify_password(body.password, user.password_hash):
         raise HTTPException(403, "Password is incorrect.")
-    ids = db.scalars(select(Upload.id).where(Upload.user_id == user.id)).all()
     # ORM-level deletes so cascades also work on SQLite (test fallback); PostgreSQL cascades via FKs.
     for model in (Upload, SavedItem, Activity, Project, AuthSession):
         db.execute(delete(model).where(model.user_id == user.id))

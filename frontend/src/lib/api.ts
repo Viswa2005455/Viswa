@@ -50,6 +50,12 @@ export const api = {
     request<T>(path, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
   patch: <T>(path: string, data: unknown) =>
     request<T>(path, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
+  /** POST multipart form fields and files (each field name maps to a string or a File). */
+  form: <T>(path: string, fields: Record<string, string | File | null | undefined>) => {
+    const fd = new FormData();
+    Object.entries(fields).forEach(([k, v]) => { if (v instanceof File) fd.append(k, v, v.name); else if (v != null && v !== '') fd.append(k, v); });
+    return request<T>(path, { method: 'POST', body: fd });
+  },
   upload: <T>(path: string, files: File[]) => {
     const fd = new FormData();
     files.forEach((f) => fd.append('files', f, f.name));

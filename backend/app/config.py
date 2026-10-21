@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     # the whole app on one address (how the Docker image and the Render blueprint run it).
     fis_frontend_dir: Path = BACKEND_DIR.parent / "frontend" / "dist"
 
+    # Live share prices (optional): eodhd | twelvedata | none. The key stays on the server.
+    fis_market_provider: str = "none"
+    fis_market_api_key: SecretStr | None = None
+
     fis_ai_provider: str = "none"
     anthropic_api_key: SecretStr | None = None
     fis_ai_model: str = "claude-opus-5-5"

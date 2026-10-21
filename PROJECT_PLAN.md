@@ -24,6 +24,32 @@ _Last updated: 2026-10-17 (session 7)_
 | 7. Persistence & security | Accounts (scrypt, server-side sessions, CSRF/origin check, rate limits), PostgreSQL + Alembic, projects, saved models with versions, history, per-user isolation, retention purge, export and deletion | ✅ Done |
 | 8. Final QA | Full accessibility audit, performance, deployment hardening | ⏳ Ongoing per phase |
 
+## Tax, GST and markets (v0.11.0)
+
+Research for every rule came from official sources: incometax.gov.in, incometaxindia.gov.in, gst.gov.in, cbic, gstcouncil and pib. Sources are cited in the modules. Where sources disagree, the app shows a note rather than guessing; for example, whether capital gains count towards the ₹12 lakh 87A limit is a switch.
+
+- **Income Tax** (`app/finance/incometax.py`, page `/income-tax`), AY 2026-27 under the 1961 Act:
+  - ITR form selector;
+  - old vs new regime;
+  - entity tax;
+  - due dates, the 234F fee and 234A interest.
+- **GST** (`app/finance/gst.py`, `app/files/registers.py`, page `/gst`):
+  - return selector and due dates;
+  - GSTR-3B set-off (s.49/49A, Rule 88A, Rule 86B);
+  - GSTR-1 from a sales register with GSTIN check digits;
+  - 2B reconciliation.
+- **Markets & Risk** (`app/market/providers.py`, `app/finance/stock_risk.py`, page `/markets`):
+  - EODHD or Twelve Data behind one interface, with the key on the server;
+  - or uploaded price files;
+  - a transparent risk score and profile fit.
+- **Verified:**
+  - 260+ backend tests with hand-worked answers;
+  - a browser run of every new tab in light and dark mode, with uploads of sample registers and price files;
+  - no console errors and no phone overflow.
+- **Not verified:**
+  - live calls to EODHD and Twelve Data (this build machine cannot reach them); the parsers follow the providers' documented formats and are tested with recorded responses;
+  - filing itself, which the app does not do.
+
 ## Online-ready (v0.10.0)
 
 - **Start-up crash fixed:** `app/ai/assistant.py` used a backslash inside an f-string, which is a SyntaxError on Python 3.11, so the backend crashed at start on PCs where uv picked Python 3.11 (likely the "Cannot reach the server" report). `backend/.python-version` now pins 3.13, and the whole test suite was run on Python 3.11 too.

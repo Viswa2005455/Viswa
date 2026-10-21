@@ -33,6 +33,9 @@ const Assistant = lazy(() => import('./pages/Assistant').then((m) => ({ default:
 const Costing = lazy(() => import('./pages/Costing').then((m) => ({ default: m.Costing })));
 const Accounting = lazy(() => import('./pages/Accounting').then((m) => ({ default: m.Accounting })));
 const Investments = lazy(() => import('./pages/Investments').then((m) => ({ default: m.Investments })));
+const IncomeTax = lazy(() => import('./pages/IncomeTax').then((m) => ({ default: m.IncomeTax })));
+const GST = lazy(() => import('./pages/GST').then((m) => ({ default: m.GST })));
+const Markets = lazy(() => import('./pages/Markets').then((m) => ({ default: m.Markets })));
 const Reports = lazy(() => import('./pages/Reports').then((m) => ({ default: m.Reports })));
 const SettingsPage = lazy(() => import('./pages/Settings').then((m) => ({ default: m.SettingsPage })));
 
@@ -68,6 +71,9 @@ function Gate() {
                 <Route path="costing" element={<Costing />} />
                 <Route path="accounting" element={<Accounting />} />
                 <Route path="investments" element={<Investments />} />
+                <Route path="markets" element={<Markets />} />
+                <Route path="income-tax" element={<IncomeTax />} />
+                <Route path="gst" element={<GST />} />
                 <Route path="statements" element={<Statements />} />
                 <Route path="ratios" element={<Ratios />} />
                 <Route path="cash-flow" element={<CashFlow />} />

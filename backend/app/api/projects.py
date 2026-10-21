@@ -17,14 +17,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..auth.deps import current_user, log_activity
-from ..config import Settings, get_settings
 from ..db.models import Activity, Project, SavedItem, SavedVersion, Upload, User, utcnow
 from ..db.session import get_db
 
 router = APIRouter(prefix="/api", tags=["projects"])
 
 Kind = Literal["dcf", "scenarios", "budget", "statements", "cash_budget", "variance", "ratios", "forecast", "investment", "costing",
-               "accounting", "investments"]
+               "accounting", "investments", "income_tax", "gst"]
 MAX_SAVED_BYTES = 2 * 1024 * 1024
 
 

@@ -23,14 +23,14 @@ from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import text
 
 from .ai.provider import get_provider
-from .api import accounting, ai, analysis, auth, costing, dashboard, finance, investments, planning, projects, reports, uploads
+from .api import accounting, ai, analysis, auth, costing, dashboard, finance, investments, market, planning, projects, reports, tax, uploads
 from .auth.deps import current_user
 from .config import get_settings
 from .db.session import session_factory
 from .files.service import purge_expired
 from .finance import FinanceInputError
 
-VERSION = "0.10.0"
+VERSION = "0.11.0"
 log = logging.getLogger("fis")
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 # The built website has no inline scripts; inline styles are needed by the chart library.
@@ -214,6 +214,9 @@ app.include_router(ai.router, dependencies=protected)
 app.include_router(costing.router, dependencies=protected)
 app.include_router(accounting.router, dependencies=protected)
 app.include_router(investments.router, dependencies=protected)
+app.include_router(tax.router, dependencies=protected)
+app.include_router(tax.gst_router, dependencies=protected)
+app.include_router(market.router, dependencies=protected)
 app.include_router(reports.router)
 
 

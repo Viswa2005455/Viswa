@@ -28,6 +28,11 @@ services:
       # Secrets: Render asks for these when the Blueprint is applied; leave blank to skip.
       - key: ANTHROPIC_API_KEY
         sync: false
+      # Live share prices (optional): eodhd or twelvedata, plus that provider's key.
+      - key: FIS_MARKET_PROVIDER
+        value: none
+      - key: FIS_MARKET_API_KEY
+        sync: false
 
 databases:
   - name: finance-studio-db
