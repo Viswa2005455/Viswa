@@ -9,7 +9,7 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, Uuid
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, LargeBinary, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -65,7 +65,7 @@ class Project(Base):
 
 
 class Upload(Base):
-    """Uploaded file metadata and analysis. Bytes live on disk at storage/uploads/<id>.bin."""
+    """Uploaded file metadata and analysis. The original bytes live in `upload_blobs`."""
     __tablename__ = "uploads"
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
@@ -86,6 +86,14 @@ class Upload(Base):
     analysis: Mapped[dict] = mapped_column(JsonType, default=dict)
     uploaded_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     expires_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class UploadBlob(Base):
+    """Original bytes of an upload, kept in the database so hosted deployments need no persistent
+    disk and backups cover everything. Deleted with its upload (ON DELETE CASCADE)."""
+    __tablename__ = "upload_blobs"
+    upload_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("uploads.id", ondelete="CASCADE"), primary_key=True)
+    data: Mapped[bytes] = mapped_column(LargeBinary)
 
 
 class SavedItem(Base):

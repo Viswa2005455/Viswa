@@ -25,7 +25,8 @@
 | Authorisation | Every data endpoint requires a session. Every query is filtered by `user_id`, and another user's object returns 404. Tests cover uploads, projects, saved models, versions, history and exports |
 | Privacy controls | Users can export all their data as JSON, delete all data, or delete their account (password plus typed confirmation). Uploads expire after `FIS_UPLOAD_RETENTION_DAYS` and are purged automatically. Browser drafts are cleared on sign-out and when a different user signs in |
 | Secrets | API keys and the database URL live only in `backend/.env` (git-ignored); API keys are read with `SecretStr`. The frontend never receives them. In production the server refuses to start with the development database password |
-| Headers | `Cache-Control: no-store` on API responses, and HSTS in production |
+| Headers | `Cache-Control: no-store` on API responses (hashed website assets are cached), HSTS in production, and a Content-Security-Policy on website pages (scripts only from the site itself; no inline scripts) |
+| Hosting | One container serves the website and the API on one address. Requests over `FIS_MAX_REQUEST_MB` are rejected with 413 before they are read, including chunked bodies. The built-website route resolves paths and serves only files inside the build folder. API docs (`/docs`, `/openapi.json`) are off in production. Uploaded files are stored in PostgreSQL (`upload_blobs`) and deleted with their upload record |
 | AI privacy | The AI assistant is off unless `FIS_AI_PROVIDER=anthropic` and a key are set on the server. Each question needs a consent tick that lists the data being sent, and the tick resets after every question; the server refuses requests without consent. Attached data is size-limited (300 KB), framed to the model as data rather than instructions, and the AI's reply is rendered as text (no HTML). The model calls the app's calculators as tools and cannot read files, the database or other users' data. Requests are rate-limited (60 per user per hour) and logged in the user's history (mode and attachment names only, not content) |
 
 ## Not yet implemented
@@ -37,7 +38,7 @@
 - Malware scanning of uploads.
 - Sandboxed code execution (Phase 5).
 - The AI provider (Anthropic) receives the question and the data the user ticked; check Anthropic's data-retention terms for your account before sending confidential documents.
-- Dependency vulnerability scanning in CI.
+- Dependency vulnerability scanning in CI. On 21 Oct 2026 `npm audit --omit=dev` and `pip-audit` (on the locked production dependencies) reported no known vulnerabilities after Pillow was upgraded to 13.0.0. This must be repeated regularly.
 
 ## Deployment checklist
 
@@ -45,10 +46,10 @@
 2. Use a strong database password in `DATABASE_URL`; the development password is refused in production.
 3. Set `FIS_CORS_ORIGINS` to your exact site address.
 4. Serve the frontend and `/api` from the **same domain**.
-5. Run uvicorn with `--proxy-headers` behind the proxy so rate limits see real client IPs.
-6. Set a request body limit in the proxy (for example `client_max_body_size 30m;`).
+5. Run uvicorn with `--proxy-headers` behind the proxy so rate limits see real client IPs (the Docker image does this; it trusts forwarded headers from any address, so only the platform's proxy may reach the container).
+6. The app limits request bodies itself (`FIS_MAX_REQUEST_MB`); a proxy limit is still a good extra layer.
 7. Set `FIS_ALLOW_REGISTRATION=false` if only invited users should have accounts (create them first).
-8. Back up the database and `backend/storage/uploads/` (see docs/DATABASE.md).
+8. Back up the database; since 0.10 it holds the uploaded files too (see docs/DATABASE.md).
 
 ## Reporting
 

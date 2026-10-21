@@ -24,6 +24,24 @@ _Last updated: 2026-10-17 (session 7)_
 | 7. Persistence & security | Accounts (scrypt, server-side sessions, CSRF/origin check, rate limits), PostgreSQL + Alembic, projects, saved models with versions, history, per-user isolation, retention purge, export and deletion | ✅ Done |
 | 8. Final QA | Full accessibility audit, performance, deployment hardening | ⏳ Ongoing per phase |
 
+## Online-ready (v0.10.0)
+
+- **Start-up crash fixed:** `app/ai/assistant.py` used a backslash inside an f-string, which is a SyntaxError on Python 3.11, so the backend crashed at start on PCs where uv picked Python 3.11 (likely the "Cannot reach the server" report). `backend/.python-version` now pins 3.13, and the whole test suite was run on Python 3.11 too.
+- **One-service hosting:** when `frontend/dist` exists the API also serves the website (client-side routes fall back to `index.html`; paths cannot leave the build folder). A `Dockerfile` builds both, and `render.yaml` is a Render Blueprint with a PostgreSQL database.
+- **Uploads stored in PostgreSQL** (`upload_blobs`, migration `43a2e23540e6` copies old disk files; housekeeping deletes disk copies once stored), so a hosted copy needs no disk.
+- **Production hardening:**
+  - request size limit (`FIS_MAX_REQUEST_MB`, also for chunked bodies);
+  - Content-Security-Policy on pages and long caching for hashed assets;
+  - API docs hidden in production;
+  - `postgres://` URLs normalised;
+  - the hosting address (`RENDER_EXTERNAL_URL`) trusted automatically.
+- **Verified:**
+  - the Docker image was built and run in production mode against PostgreSQL;
+  - in a browser: secure HttpOnly cookies, all 24 pages, Screener import, dashboard, Excel export and sign-out worked with no console or CSP errors;
+  - `npm audit` and `pip-audit` are clean after upgrading Pillow to 13.0.0;
+  - 235 backend tests pass.
+- **Not verified:** an actual deployment on Render (it needs the owner's Render account).
+
 ## Start-up fixes (v0.9.2)
 
 - `.env.example` no longer sets `DATABASE_URL`. A `backend/.env` copied from it (for the AI key) made the launchers expect a PostgreSQL server that most PCs do not have, so the backend never started.

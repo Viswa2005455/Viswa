@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
 DEFAULT_TEST_DB = "postgresql+psycopg://fis_app:fis_dev_password@localhost:5432/finance_studio_test"
-TABLES = ["activity", "saved_item_versions", "saved_items", "uploads", "sessions", "projects", "users"]
+TABLES = ["activity", "saved_item_versions", "saved_items", "upload_blobs", "uploads", "sessions", "projects", "users"]
 PASSWORD = "correct-horse-battery-9"
 
 

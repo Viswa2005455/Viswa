@@ -1,8 +1,10 @@
 # Database guide
 
 Finance Intelligence Studio stores accounts, projects, saved models and upload metadata in
-**PostgreSQL** (version 14 or newer). The original uploaded file bytes are stored on disk in
-`backend/storage/uploads/<random-id>.bin`.
+**PostgreSQL** (version 14 or newer). Since version 0.10 the original uploaded file bytes are
+stored in the database too (`upload_blobs`), so a hosted copy needs no disk. Older versions kept
+them in `backend/storage/uploads/<random-id>.bin`; the migration copies those files into the
+database and the server deletes each disk copy once it is stored.
 
 ## Local mode (SQLite)
 
@@ -80,4 +82,4 @@ Keep the database password only in `backend/.env` on the server; never put it in
 
 For a self-hosted database, back up regularly with
 `pg_dump -Fc -h <host> -U fis_app finance_studio > backup.dump`.
-Also back up `backend/storage/uploads/` if you need the original files. Managed services such as Supabase include automatic backups on paid plans.
+The dump includes the uploaded files. Managed services such as Supabase include automatic backups on paid plans.

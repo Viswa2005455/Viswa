@@ -74,13 +74,13 @@ def get_one(upload_id: str, user: User = Depends(current_user), db: Session = De
 
 
 @router.delete("/{upload_id}")
-def delete(upload_id: str, settings: Settings = Depends(get_settings), user: User = Depends(current_user), db: Session = Depends(get_db)):
+def delete(upload_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
     try:
         rec = service.get_upload(db, user.id, upload_id)
         if not rec:
             raise HTTPException(404, "Upload not found.")
         name, project_id = rec.name, rec.project_id
-        service.delete_upload(db, user.id, upload_id, settings)
+        service.delete_upload(db, user.id, upload_id)
     except service.UploadError as e:
         raise HTTPException(400, str(e))
     log_activity(db, user.id, "upload.deleted", project_id=project_id, entity_type="upload", entity_id=upload_id, name=name)

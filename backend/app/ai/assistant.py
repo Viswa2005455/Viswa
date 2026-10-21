@@ -306,7 +306,8 @@ def _attachment_block(atts: list[Attachment]) -> str:
     parts = ["<attached_data>"]
     for a in atts:
         payload = json.dumps(_clean(a.data), ensure_ascii=False, separators=(",", ":"), sort_keys=True, default=str)
-        parts.append(f'<item title="{escape(a.title)}" kind="{escape(a.kind)}">\n{payload.replace("</", "<\\/")}\n</item>')
+        payload = payload.replace("</", "<\\/")  # the data can never close the <item> or <attached_data> tag
+        parts.append(f'<item title="{escape(a.title)}" kind="{escape(a.kind)}">\n{payload}\n</item>')
     parts.append("</attached_data>")
     return "\n".join(parts)
 

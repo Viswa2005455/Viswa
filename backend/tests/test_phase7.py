@@ -32,6 +32,13 @@ def db_session():
     return session_factory()()
 
 
+def stored_blobs() -> set[str]:
+    """Upload ids whose original bytes are in the database."""
+    from app.db.models import UploadBlob
+    with db_session() as db:
+        return {i.hex for i in db.scalars(select(UploadBlob.upload_id))}
+
+
 # ---------------------------------------------------------------- authentication
 
 def test_protected_endpoints_require_sign_in(anon_client):
@@ -200,7 +207,7 @@ def test_users_cannot_see_or_change_each_others_data(client):
 
 # ---------------------------------------------------------------- projects, saved models, history
 
-def test_project_crud_and_delete_cascade(client, tmp_path):
+def test_project_crud_and_delete_cascade(client):
     p = client.post("/api/projects", json={"name": "Valuation", "description": "DCF of X"}).json()
     assert client.post("/api/projects", json={"name": "Valuation"}).status_code == 409
     up = client.post("/api/uploads", files=[("files", ("a.xlsx", xlsx()))], data={"project_id": p["id"]}).json()["results"][0]["upload"]
@@ -209,11 +216,11 @@ def test_project_crud_and_delete_cascade(client, tmp_path):
     assert detail["uploads"] == 1 and detail["saved_items"] == 1 and detail["upload_list"][0]["id"] == up["id"]
     r = client.patch(f"/api/projects/{p['id']}", json={"name": "Valuation 2026", "archived": True}).json()
     assert r["name"] == "Valuation 2026" and r["archived"] is True
-    assert list((tmp_path / "uploads").glob("*.bin"))
+    assert stored_blobs() == {up["id"]}
     assert client.delete(f"/api/projects/{p['id']}").json()["uploads_deleted"] == 1
     assert client.get(f"/api/uploads/{up['id']}").status_code == 404
     assert client.get("/api/saved").json()["items"] == []
-    assert not list((tmp_path / "uploads").glob("*.bin"))
+    assert stored_blobs() == set()
 
 
 def test_saved_item_versions(client):
@@ -250,7 +257,7 @@ def test_upload_rejected_for_bad_project_id(client):
 
 # ---------------------------------------------------------------- retention, export, deletion
 
-def test_retention_purge_removes_expired_uploads_and_files(client, tmp_path):
+def test_retention_purge_removes_expired_uploads_and_files(client):
     up = client.post("/api/uploads", files=[("files", ("a.xlsx", xlsx()))]).json()["results"][0]["upload"]
     fresh = client.post("/api/uploads", files=[("files", ("b.xlsx", xlsx()))]).json()["results"][0]["upload"]
     exp = dt.datetime.fromisoformat(up["expires_at"])
@@ -265,8 +272,7 @@ def test_retention_purge_removes_expired_uploads_and_files(client, tmp_path):
         assert purge_expired(db, get_settings())["uploads_deleted"] == 1
     assert client.get(f"/api/uploads/{up['id']}").status_code == 404
     assert client.get(f"/api/uploads/{fresh['id']}").status_code == 200
-    assert not (tmp_path / "uploads" / f"{up['id']}.bin").exists()
-    assert (tmp_path / "uploads" / f"{fresh['id']}.bin").exists()
+    assert stored_blobs() == {fresh["id"]}
     assert "upload.expired" in [a["action"] for a in client.get("/api/activity").json()["activity"]]
 
 
@@ -280,24 +286,24 @@ def test_export_contains_data_but_no_secrets(client):
     assert "password" not in raw and "scrypt" not in raw and "token" not in raw
 
 
-def test_delete_all_data_keeps_account(client, tmp_path):
+def test_delete_all_data_keeps_account(client):
     client.post("/api/projects", json={"name": "P"})
     client.post("/api/uploads", files=[("files", ("a.xlsx", xlsx()))])
     assert client.post("/api/account/delete-data", json={"password": "wrong-pass-123"}).status_code == 403
     assert client.post("/api/account/delete-data", json={"password": PASSWORD}).json()["deleted_uploads"] == 1
     assert client.get("/api/projects").json()["projects"] == [] and client.get("/api/uploads").json()["uploads"] == []
-    assert not list((tmp_path / "uploads").glob("*.bin"))
+    assert stored_blobs() == set()
     assert client.get("/api/auth/me").status_code == 200
 
 
-def test_delete_account(client, tmp_path):
+def test_delete_account(client):
     client.post("/api/uploads", files=[("files", ("a.xlsx", xlsx()))])
     client.post("/api/saved", json={"kind": "dcf", "name": "D", "data": {}})
     assert client.post("/api/account/delete", json={"password": "wrong-pass-123"}).status_code == 403
     assert client.post("/api/account/delete", json={"password": PASSWORD}).status_code == 200
     assert client.get("/api/auth/me").status_code == 401
     assert client.post("/api/auth/login", json={"email": "alice@example.com", "password": PASSWORD}).status_code == 401
-    assert not list((tmp_path / "uploads").glob("*.bin"))
+    assert stored_blobs() == set()
     from app.db.models import SavedItem, Upload, User
     with db_session() as db:
         assert db.scalar(select(User)) is None and db.scalar(select(Upload)) is None and db.scalar(select(SavedItem)) is None
@@ -337,3 +343,20 @@ def test_production_refuses_sqlite(monkeypatch):
         with TestClient(main.app):
             pass
     get_settings.cache_clear()
+
+
+def test_legacy_disk_copies_are_removed_once_in_database(client, tmp_path):
+    """Pre-0.10 uploads lived on disk; housekeeping deletes a disk copy once its bytes are in the
+    database, and orphans whose upload is gone, but leaves files it did not write."""
+    from app.config import get_settings
+    from app.files.service import purge_expired
+    up = client.post("/api/uploads", files=[("files", ("a.xlsx", xlsx()))]).json()["results"][0]["upload"]
+    folder = tmp_path / "uploads"
+    folder.mkdir()
+    (folder / f"{up['id']}.bin").write_bytes(b"old copy")
+    (folder / f"{'0' * 32}.bin").write_bytes(b"orphan")
+    (folder / "notes.bin").write_bytes(b"not ours")
+    with db_session() as db:
+        assert purge_expired(db, get_settings())["legacy_files_deleted"] == 2
+    assert sorted(p.name for p in folder.iterdir()) == ["notes.bin"]
+    assert stored_blobs() == {up["id"]}

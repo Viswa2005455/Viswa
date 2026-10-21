@@ -45,10 +45,9 @@ def _excel_bytes(upload_id: str, user: User, db: Session, settings: Settings, pu
         raise HTTPException(404, "Upload not found.")
     if not up.name.lower().endswith((".xlsx", ".xlsm")):
         raise HTTPException(422, f"The {purpose} reads Excel .xlsx or .xlsm files. Save .xls or .csv files as .xlsx first.")
-    path = service.file_path(settings, up.id)
-    if not path.exists():
+    data = service.original_bytes(db, up)
+    if data is None:
         raise HTTPException(404, "The original file is no longer stored.")
-    data = path.read_bytes()
     try:
         archive.check_zip_container(data, 10_000, settings.fis_zip_max_uncompressed_mb * 1024 * 1024)
     except Exception as e:

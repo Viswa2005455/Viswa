@@ -188,15 +188,30 @@ legacy/personal-tracker/ The earlier single-file personal finance tracker (kept 
 
 Full details: [docs/FINANCE_CONVENTIONS.md](docs/FINANCE_CONVENTIONS.md).
 
-## Production build and deployment (outline)
+## Put the app online (Render)
 
-1. Create a production PostgreSQL database with a strong password (or use Supabase/RDS/Cloud SQL). Then set `DATABASE_URL` and run `uv run alembic upgrade head`.
-2. Run `cd frontend && npm run build` and serve `frontend/dist/` as static files (for example with Nginx or any static host).
-3. Run the API behind HTTPS on the **same domain**, with `/api` routed to it, for example:
-   `uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1 --proxy-headers`
-4. Set the following in `backend/.env` and keep that file out of git:
-   - `FIS_ENV=production` — this makes cookies `Secure`, adds HSTS, and refuses the development database password.
-   - `FIS_CORS_ORIGINS` — your site's address.
-   - `FIS_ALLOW_REGISTRATION=false` — once your own accounts exist, if the site is private.
-5. Limit the request body size in the reverse proxy (Nginx: `client_max_body_size 30m;`).
-6. Read [docs/SECURITY.md](docs/SECURITY.md) first. Rate limiting is per process: with several workers or servers, use the proxy's rate limiting.
+The repository includes a `Dockerfile` (one container serves the website and the API on one address) and a `render.yaml` Blueprint (that container plus a PostgreSQL database).
+
+1. Create a free account at [render.com](https://render.com) and sign in with GitHub.
+2. Click **New → Blueprint**, pick this repository and the branch `finance-intelligence-studio`, and click **Apply**.
+3. Render builds the app (about 5–10 minutes the first time), creates the database and shows an address such as `https://finance-intelligence-studio.onrender.com`.
+4. Open the address and create your account.
+5. In Render, open the service → **Environment** and set `FIS_ALLOW_REGISTRATION` to `false`, so nobody else can sign up. To turn on the AI assistant, set `FIS_AI_PROVIDER=anthropic` and `ANTHROPIC_API_KEY` there too.
+
+Things to know:
+
+- **Free plans have limits.** The free web service sleeps after a period without visitors, so the first visit afterwards takes about a minute. Free databases are deleted after a fixed period. Check Render's current pricing page; use a paid plan for real client work.
+- **Uploaded files and all data live in the PostgreSQL database**, so the service needs no disk. Back up the database (Render offers backups on paid plans).
+- **The site's address is trusted automatically.** Render sets `RENDER_EXTERNAL_URL`, which the app adds to the allowed origins.
+- Read [docs/SECURITY.md](docs/SECURITY.md) before putting client data online. The app has not been independently security-audited.
+
+### Other hosts
+
+Any host that runs a Docker container works (Railway, Fly.io, a VPS, Azure Container Apps…):
+
+```
+docker build -t finance-studio .
+docker run -p 8000:8000 -e DATABASE_URL=postgresql://user:password@host:5432/finance_studio finance-studio
+```
+
+The container runs the database migrations, then starts on `$PORT` (default 8000) with `FIS_ENV=production`. Production mode makes cookies `Secure`, sends HSTS and a Content-Security-Policy, hides the API docs, and refuses SQLite and the development database password. Put it behind HTTPS. The container trusts the proxy's `X-Forwarded-For` header (for rate limits), so do not expose its port directly to the internet without a proxy. Request bodies over `FIS_MAX_REQUEST_MB` (default 60) are rejected with 413.

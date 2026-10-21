@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import datetime as dt
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
@@ -151,15 +150,6 @@ def revoke_others(s: AuthSession = Depends(current_session), db: Session = Depen
 # ---------------------------------------------------------------- account data
 
 
-def _remove_files(paths: list[Path]) -> None:
-    for p in paths:
-        p.unlink(missing_ok=True)
-
-
-def upload_file_path(settings: Settings, upload_id) -> Path:
-    return settings.upload_dir / f"{upload_id.hex}.bin"
-
-
 @account.get("/export")
 def export_all(user: User = Depends(current_user), db: Session = Depends(get_db)):
     """Everything stored about the user, as JSON (uploaded file bytes are not included)."""
@@ -176,8 +166,7 @@ class ConfirmIn(BaseModel):
 
 
 @account.post("/delete-data")
-def delete_data(body: ConfirmIn, user: User = Depends(current_user), db: Session = Depends(get_db),
-                settings: Settings = Depends(get_settings)):
+def delete_data(body: ConfirmIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
     """Delete all uploads, projects, saved models and history, but keep the account."""
     if not verify_password(body.password, user.password_hash):
         raise HTTPException(403, "Password is incorrect.")
@@ -188,13 +177,11 @@ def delete_data(body: ConfirmIn, user: User = Depends(current_user), db: Session
     db.execute(delete(Activity).where(Activity.user_id == user.id))
     log_activity(db, user.id, "account.data_deleted", uploads=len(ids))
     db.commit()
-    _remove_files([upload_file_path(settings, i) for i in ids])
     return {"deleted_uploads": len(ids)}
 
 
 @account.post("/delete")
-def delete_account(body: ConfirmIn, response: Response, user: User = Depends(current_user), db: Session = Depends(get_db),
-                   settings: Settings = Depends(get_settings)):
+def delete_account(body: ConfirmIn, response: Response, user: User = Depends(current_user), db: Session = Depends(get_db)):
     """Permanently delete the account and everything in it."""
     if not verify_password(body.password, user.password_hash):
         raise HTTPException(403, "Password is incorrect.")
@@ -204,6 +191,5 @@ def delete_account(body: ConfirmIn, response: Response, user: User = Depends(cur
         db.execute(delete(model).where(model.user_id == user.id))
     db.delete(db.get(User, user.id))
     db.commit()
-    _remove_files([upload_file_path(settings, i) for i in ids])
     response.delete_cookie(SESSION_COOKIE, path="/")
     return {"deleted": True}

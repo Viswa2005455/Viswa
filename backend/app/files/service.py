@@ -1,11 +1,13 @@
 """Upload orchestration: validate, parse, recommend, store.
 
 Storage:
-  PostgreSQL `uploads` table   metadata + parsed analysis, owned by one user (user_id)
-  storage/uploads/<uuid>.bin   original bytes, named only by the server-generated id
+  `uploads` table        metadata + parsed analysis, owned by one user (user_id)
+  `upload_blobs` table   original bytes, deleted with the upload (ON DELETE CASCADE)
 
 Every read, list and delete is filtered by user_id. Uploads expire after the configured
-retention period (FIS_UPLOAD_RETENTION_DAYS) and are purged with their files.
+retention period (FIS_UPLOAD_RETENTION_DAYS) and are purged with their bytes. Versions before
+0.10 kept bytes on disk (storage/uploads/<id>.bin); the migration copied them into the database
+and `remove_legacy_files` deletes the disk copies.
 """
 
 from __future__ import annotations
@@ -19,7 +21,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from ..config import Settings
-from ..db.models import Activity, AuthSession, Upload, utcnow
+from ..db.models import Activity, AuthSession, Upload, UploadBlob, utcnow
 from . import archive, documents, tabular
 from .detect import EXTENSIONS, detect, safe_display_name
 from .routing import recommend, suggest_statement_mapping, suggest_statements, suggest_variance_lines
@@ -114,8 +116,15 @@ def _summary(parsed: dict) -> str:
     return "Stored"
 
 
-def file_path(settings: Settings, upload_id: uuid.UUID) -> Path:
+def legacy_file_path(settings: Settings, upload_id: uuid.UUID) -> Path:
+    """Where versions before 0.10 stored an upload's bytes."""
     return settings.upload_dir / f"{upload_id.hex}.bin"
+
+
+def original_bytes(db: Session, upload: Upload) -> bytes | None:
+    """The uploaded file exactly as received, or None if it is no longer stored."""
+    blob = db.get(UploadBlob, upload.id)
+    return blob.data if blob else None
 
 
 def parse_upload_id(upload_id: str) -> uuid.UUID:
@@ -167,9 +176,9 @@ def save_upload(db: Session, user_id: uuid.UUID, project_id: uuid.UUID | None, f
         statements=suggest_statements(sheets, name), analysis=_json_safe(parsed), uploaded_at=now,
         expires_at=now + dt.timedelta(days=settings.fis_upload_retention_days),
     )
-    settings.upload_dir.mkdir(parents=True, exist_ok=True)
-    file_path(settings, u.id).write_bytes(data)
     db.add(u)
+    db.flush()  # the blob's foreign key needs the upload row first
+    db.add(UploadBlob(upload_id=u.id, data=data))
     return u
 
 
@@ -209,12 +218,11 @@ def list_uploads(db: Session, user_id: uuid.UUID, project_id: uuid.UUID | None =
     return list(db.scalars(q.order_by(Upload.uploaded_at.desc())).all())
 
 
-def delete_upload(db: Session, user_id: uuid.UUID, upload_id: str, settings: Settings) -> bool:
+def delete_upload(db: Session, user_id: uuid.UUID, upload_id: str) -> bool:
     u = get_upload(db, user_id, upload_id)
     if not u:
         return False
-    db.delete(u)
-    file_path(settings, u.id).unlink(missing_ok=True)
+    db.delete(u)  # its bytes go with it (ON DELETE CASCADE)
     return True
 
 
@@ -235,7 +243,7 @@ def all_series(db: Session, user_id: uuid.UUID, project_id: uuid.UUID | None = N
 
 
 def purge_expired(db: Session, settings: Settings) -> dict:
-    """Retention: delete uploads past their expiry (and their files) and expired sessions."""
+    """Retention: delete uploads past their expiry (their bytes cascade) and expired sessions."""
     now = utcnow()
     expired = db.scalars(select(Upload).where(Upload.expires_at <= now)).all()
     for u in expired:
@@ -244,6 +252,23 @@ def purge_expired(db: Session, settings: Settings) -> dict:
         db.delete(u)
     sessions = db.execute(delete(AuthSession).where(AuthSession.expires_at <= now)).rowcount
     db.commit()
-    for u in expired:
-        file_path(settings, u.id).unlink(missing_ok=True)
-    return {"uploads_deleted": len(expired), "sessions_deleted": sessions or 0}
+    legacy = remove_legacy_files(db, settings)
+    return {"uploads_deleted": len(expired), "sessions_deleted": sessions or 0, "legacy_files_deleted": legacy}
+
+
+def remove_legacy_files(db: Session, settings: Settings) -> int:
+    """Delete pre-0.10 disk copies (storage/uploads/<id>.bin) whose bytes are now in the database,
+    or whose upload no longer exists, so deleted data does not linger on disk."""
+    folder = settings.upload_dir
+    if not folder.is_dir():
+        return 0
+    removed = 0
+    for path in folder.glob("*.bin"):
+        try:
+            uid = parse_upload_id(path.stem)
+        except UploadError:
+            continue  # not a file this app wrote
+        if db.get(UploadBlob, uid) is not None or db.get(Upload, uid) is None:
+            path.unlink(missing_ok=True)
+            removed += 1
+    return removed

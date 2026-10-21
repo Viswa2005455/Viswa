@@ -116,8 +116,7 @@ def update_project(project_id: str, body: ProjectPatch, user: User = Depends(cur
 
 
 @router.delete("/projects/{project_id}")
-def delete_project(project_id: str, user: User = Depends(current_user), db: Session = Depends(get_db),
-                   settings: Settings = Depends(get_settings)):
+def delete_project(project_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
     """Deletes the project, its saved models and its uploaded files."""
     p = own_project(db, user, project_id)
     ids = db.scalars(select(Upload.id).where(Upload.user_id == user.id, Upload.project_id == p.id)).all()
@@ -126,8 +125,6 @@ def delete_project(project_id: str, user: User = Depends(current_user), db: Sess
     db.delete(p)
     log_activity(db, user.id, "project.deleted", entity_type="project", entity_id=str(project_id), name=name, uploads=len(ids))
     db.commit()
-    for i in ids:
-        (settings.upload_dir / f"{i.hex}.bin").unlink(missing_ok=True)
     return {"deleted": True, "uploads_deleted": len(ids)}
 
 
