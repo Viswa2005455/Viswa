@@ -1,0 +1,41 @@
+# Render Blueprint: one web service (website + API) and one PostgreSQL database.
+# In Render: New > Blueprint > choose this repository and branch > Apply. Render then builds the
+# Dockerfile, creates the database, connects them and gives the site an https://...onrender.com address.
+# Free plans have limits (the service sleeps when idle; free databases expire). Check Render's
+# current pricing page before relying on it for client work.
+services:
+  - type: web
+    name: finance-intelligence-studio
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: FIS_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: finance-studio-db
+          property: connectionString
+      # The site's own address is added automatically (RENDER_EXTERNAL_URL).
+      - key: FIS_CORS_ORIGINS
+        value: ""
+      # Set to "false" after your own accounts are created, so strangers cannot sign up.
+      - key: FIS_ALLOW_REGISTRATION
+        value: "true"
+      - key: FIS_AI_PROVIDER
+        value: none
+      # Secrets: Render asks for these when the Blueprint is applied; leave blank to skip.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      # Live share prices (optional): eodhd or twelvedata, plus that provider's key.
+      - key: FIS_MARKET_PROVIDER
+        value: none
+      - key: FIS_MARKET_API_KEY
+        sync: false
+
+databases:
+  - name: finance-studio-db
+    plan: free
+    databaseName: finance_studio
+    user: fis_app
