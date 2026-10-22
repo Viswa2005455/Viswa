@@ -35,7 +35,8 @@ A professional financial analysis workspace for CPAs, CFA charterholders, CMAs, 
 | **Red-Flag Detector** | Beneish M-score (8- or 5-variable), Altman Z and Z'' scores, Piotroski F-score and cash-quality warnings (profit not turning into cash, receivables or inventory outgrowing sales, rising debt, large other income, low interest cover). Every score shows its formula, parts and inputs. Missing inputs are reported, never treated as zero. |
 | **Peer Comparison** | Compare 2–12 saved companies on growth, margins, ROE/ROA/ROCE, efficiency, cash quality, safety, red-flag scores and valuation (with market cap), with ranks, medians and comparability warnings. |
 | **Excel Model Checker** | Checks your own Excel models for error values, #REF!, links to other files, missing sheets, circular references, numbers typed inside formulas, inconsistent formulas, values typed over formula rows, balance sheets that do not balance and hidden sheets. Formulas are read, never run. |
-| **AI Finance Assistant** | Optional, on Claude Opus 5.5 (needs your own Anthropic API key). Modes: analyse my data, earnings-quality review, model review, challenge the valuation, peer benchmarking, technical accounting research (US GAAP / IFRS / Ind AS) and analysis memo. Fifteen engine tools (ratios, forensic screens, DCF, lease/bond/EPS/deferred-tax schedules, materiality, CVP, bond and option analytics) produce every number, and you consent before each question is sent. |
+| **AI Model Health** | Shows the AI provider, whether a key is present on the server (never the key), each model's last check or question, latency, the model that actually answered, last success time and error category. Live checks run only when you press a button and confirm. |
+| **AI Finance Assistant** | Optional, on Claude Opus 5.5, Sonnet 5.5 or Haiku 5.5 — you choose (needs your own Anthropic API key). The exact results of the app's calculators are shown under each answer, separately from the AI's wording, and you are told if a fallback model answered. Modes: analyse my data, earnings-quality review, model review, challenge the valuation, peer benchmarking, technical accounting research (US GAAP / IFRS / Ind AS) and analysis memo. Fifteen engine tools (ratios, forensic screens, DCF, lease/bond/EPS/deferred-tax schedules, materiality, CVP, bond and option analytics) produce every number, and you consent before each question is sent. |
 | **Ratio Analysis** | 29 ratios (liquidity, profitability, efficiency, leverage, valuation). Each shows its formula, inputs, steps and interpretation, and uses average balances when available. Can import statement lines from uploads after you confirm them. |
 | **Methodology Library** | The methodology behind the calculations: formulas, worked examples, common pitfalls and check questions. |
 | **Settings** | Change your password and see signed-in devices (with "sign out other devices"). Export all your data, delete it, or delete your account. Also: light/dark/system theme, Indian (1,23,45,678) or international number style, reduced motion, learning mode and AI provider status. |
@@ -135,18 +136,20 @@ Copy `.env.example` to `backend/.env` to change the database address, upload lim
 
 The key is read only by the backend and is never sent to the browser. A typical question costs a few US cents; the app shows an estimate under every answer.
 
+4. Open **AI Model Health** in the app and press **Access** next to a model to confirm the key works (no tokens are used).
+
 ---
 
 ## Run the tests
 
 ```bash
-cd backend && uv run pytest          # 135 tests: formulas, parsers, API, accounts, access control, retention
-cd frontend && npm test              # formatting / CSV-safety unit tests
+cd backend && uv run pytest          # 329 tests: formulas with hand-calculated answers, tax/GST rules, parsers, API, AI adapter (fake client), accounts, access control
+cd frontend && npm test              # formatting, CSV safety, API client (errors, retry, cancel, timeout)
 cd frontend && npm run typecheck     # TypeScript type check
 cd frontend && npm run build         # production build (output in frontend/dist)
 ```
 
-The backend tests use the `finance_studio_test` database and build it with the real migrations. If PostgreSQL is not running, they fall back to SQLite and print a warning, so the formula tests still run.
+The backend tests use the `finance_studio_test` database and build it with the real migrations. If PostgreSQL is not running, they fall back to SQLite and print a warning, so the formula tests still run. A SQLite run does not prove PostgreSQL behaviour; run the suite against PostgreSQL before release.
 
 ---
 

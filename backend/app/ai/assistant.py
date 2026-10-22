@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import math
+import time
 from html import escape
 from dataclasses import asdict, dataclass, field
 from typing import Any
@@ -21,16 +22,13 @@ from pydantic import BaseModel, Field, ValidationError
 from ..finance import FinanceInputError, accounting, costing, forensic, investments, peers, ratios, tvm, valuation_range
 from ..finance.cost_of_capital import capm, wacc
 from ..finance.dcf import run_dcf
+from .provider import MODELS, AIError, classify_error
 
 MAX_TOOL_ROUNDS = 8
 MAX_TOOL_RESULT_CHARS = 30_000
 
 # USD per million tokens: input, output, cache read, cache write (5-minute TTL = 1.25x input).
-PRICES = {
-    "claude-opus-5-5": (4.00, 20.00, 0.20, 5.00),
-    "claude-sonnet-5-5": (2.00, 10.00, 0.20, 2.50),
-    "claude-haiku-5-5": (0.10, 0.50, 0.01, 0.125),
-}
+PRICES = {m: v["prices"] for m, v in MODELS.items()}
 
 SYSTEM = """You are the AI analyst inside Finance Intelligence Studio, a professional workspace used by CPAs, CFA \
 charterholders, CMAs, auditors and corporate finance teams.
@@ -297,9 +295,13 @@ class Attachment:
 class ChatResult:
     reply: str
     stop_reason: str
-    model: str
+    model: str  # the model that produced the final answer (from the API response, not the request)
     tools_used: list[dict] = field(default_factory=list)
     usage: dict = field(default_factory=dict)
+    requested_model: str = ""
+    fallbacks: list[dict] = field(default_factory=list)  # each {"from": model, "to": model}
+    latency_ms: float = 0.0
+    api_calls: int = 0
 
 
 def _attachment_block(atts: list[Attachment]) -> str:
@@ -327,6 +329,8 @@ def build_messages(history: list[dict], attachments: list[Attachment]) -> list[d
 
 
 def _usage_add(total: dict, u: Any) -> None:
+    if u is None:
+        return
     for k in ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"):
         total[k] = total.get(k, 0) + int(getattr(u, k, 0) or 0)
 
@@ -339,54 +343,122 @@ def estimate_cost(model: str, usage: dict) -> float | None:
             + usage.get("cache_read_input_tokens", 0) * p[2] + usage.get("cache_creation_input_tokens", 0) * p[3]) / 1e6
 
 
-def chat(client: Any, model: str, mode: str, history: list[dict], attachments: list[Attachment]) -> ChatResult:
+def _fallbacks_in(response: Any) -> list[dict]:
+    """Switch points the server reported when a refusal was retried on another model."""
+    out = []
+    for b in getattr(response, "content", None) or []:
+        if getattr(b, "type", None) == "fallback":
+            frm, to = getattr(b, "from_", None) or getattr(b, "from", None), getattr(b, "to", None)
+            out.append({"from": getattr(frm, "model", None), "to": getattr(to, "model", None)})
+    return out
+
+
+def _served_by_fallback(response: Any) -> bool:
+    iterations = getattr(getattr(response, "usage", None), "iterations", None) or []
+    return any(getattr(i, "type", None) == "fallback_message" for i in iterations)
+
+
+def _validate(response: Any) -> None:
+    """Refuse to use a response whose shape is not what the Messages API returns."""
+    if not isinstance(getattr(response, "content", None), list) or not isinstance(getattr(response, "stop_reason", None), str):
+        raise AIError("malformed_response", "missing content or stop_reason")
+    if not isinstance(getattr(response, "model", None), str):
+        raise AIError("malformed_response", "missing model")
+
+
+def chat(client: Any, model: str, mode: str, history: list[dict], attachments: list[Attachment],
+         deadline_seconds: float = 300.0) -> ChatResult:
+    """Run one answer: the model may call the finance tools several times before replying.
+
+    Raises AIError (with a category) when the provider fails; a failure is never turned into a
+    made-up answer. The served model is read from each response, and any server-side fallback to
+    a different model is reported back so the user is told."""
     if mode not in MODES:
         raise ValueError(f"Unknown mode '{mode}'.")
+    if model not in MODELS:
+        raise ValueError(f"Unknown model '{model}'.")
     messages = build_messages(history, attachments)
     system = [{"type": "text", "text": SYSTEM}, {"type": "text", "text": f"Task for this conversation: {MODES[mode]}"}]
     effort = "high" if mode in ("report", "challenge", "research") else "medium"
+    # Refusal fallback only where the API offers it; Haiku 5.5 has none (the parameter would 400 or no-op).
+    extra = {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"} if MODELS[model]["fallback"] else {}
     usage: dict = {}
     tools_used: list[dict] = []
+    fallbacks: list[dict] = []
     served_by = model
+    start = time.perf_counter()
+    calls = 0
+
+    def result(text: str, stop: str) -> ChatResult:
+        if served_by != model and not any(f.get("to") == served_by for f in fallbacks):
+            fallbacks.append({"from": model, "to": served_by})
+        return ChatResult(text, stop, served_by, tools_used, _usage_out(served_by, usage), model, fallbacks,
+                          round((time.perf_counter() - start) * 1000, 1), calls)
+
     for _ in range(MAX_TOOL_ROUNDS + 1):
-        response = client.beta.messages.create(
-            model=model,
-            max_tokens=16000,
-            system=system,
-            tools=TOOLS,
-            messages=messages,
-            output_config={"effort": effort},
-            cache_control={"type": "ephemeral"},
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-        )
-        _usage_add(usage, response.usage)
-        served_by = getattr(response, "model", model) or model
+        if time.perf_counter() - start > deadline_seconds:
+            raise AIError("timeout", f"answer not finished within {deadline_seconds:.0f} s")
+        try:
+            response = client.beta.messages.create(
+                model=model,
+                max_tokens=16000,
+                system=system,
+                tools=TOOLS,
+                messages=messages,
+                output_config={"effort": effort},
+                cache_control={"type": "ephemeral"},
+                **extra,
+            )
+        except Exception as e:  # noqa: BLE001 - categorised for the user; nothing is fabricated
+            raise classify_error(e) from e
+        calls += 1
+        _validate(response)
+        _usage_add(usage, getattr(response, "usage", None))
+        served_by = response.model
+        fallbacks.extend(_fallbacks_in(response))
+        if _served_by_fallback(response) and not fallbacks:
+            fallbacks.append({"from": model, "to": served_by})
         if response.stop_reason == "refusal":
-            return ChatResult("The AI declined to answer this request. Try rephrasing the question, or ask about a "
-                              "different part of your analysis.", "refusal", served_by, tools_used, _usage_out(model, usage))
+            return result("The AI declined to answer this request. Try rephrasing the question, or ask about a "
+                          "different part of your analysis.", "refusal")
         if response.stop_reason != "tool_use":
             text = "\n\n".join(b.text for b in response.content if getattr(b, "type", None) == "text").strip()
             if response.stop_reason == "max_tokens":
                 text += "\n\n(The answer was cut off because it reached the length limit. Ask me to continue.)"
-            return ChatResult(text or "(No answer was returned.)", response.stop_reason, served_by, tools_used, _usage_out(model, usage))
+            return result(text or "(No answer was returned.)", response.stop_reason)
+        # Pass the full content back unchanged (thinking and fallback blocks included).
         messages.append({"role": "assistant", "content": response.content})
         results = []
         for block in response.content:
             if getattr(block, "type", None) != "tool_use":
                 continue
+            args = getattr(block, "input", None)
             try:
-                out = json.dumps(_clean(run_tool(block.name, dict(block.input))), ensure_ascii=False, default=str)
+                if not isinstance(args, dict):
+                    raise ValueError("Tool input was not a JSON object.")
+                value = _clean(run_tool(block.name, dict(args)))
+                out = json.dumps(value, ensure_ascii=False, default=str)
                 if len(out) > MAX_TOOL_RESULT_CHARS:
                     out = out[:MAX_TOOL_RESULT_CHARS] + '..."(result truncated)"'
                 results.append({"type": "tool_result", "tool_use_id": block.id, "content": out})
-                tools_used.append({"name": block.name, "ok": True})
+                tools_used.append({"name": block.name, "ok": True, "input": _clean(args), "output": _preview(value)})
             except ValueError as e:
                 results.append({"type": "tool_result", "tool_use_id": block.id, "content": f"Error: {e}", "is_error": True})
-                tools_used.append({"name": block.name, "ok": False, "error": str(e)[:200]})
+                tools_used.append({"name": block.name, "ok": False, "error": str(e)[:200], "input": _clean(args) if isinstance(args, dict) else None})
+        if not results:
+            raise AIError("malformed_response", "stop_reason was tool_use but no tool call was found")
         messages.append({"role": "user", "content": results})
-    return ChatResult("I could not finish within the allowed number of calculation steps. Please ask a narrower question.",
-                      "tool_limit", served_by, tools_used, _usage_out(model, usage))
+    return result("I could not finish within the allowed number of calculation steps. Please ask a narrower question.",
+                  "tool_limit")
+
+
+PREVIEW_CHARS = 20_000
+
+
+def _preview(value: Any) -> Any:
+    """The calculated tool output shown to the user beside the AI's explanation (trimmed for size)."""
+    text = json.dumps(value, ensure_ascii=False, default=str)
+    return value if len(text) <= PREVIEW_CHARS else {"truncated": True, "preview": text[:PREVIEW_CHARS]}
 
 
 def _usage_out(model: str, usage: dict) -> dict:

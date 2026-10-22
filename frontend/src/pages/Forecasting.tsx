@@ -34,7 +34,7 @@ export function Forecasting() {
   const [alpha, setAlpha] = useState<number | null>(null);
   const [holdout, setHoldout] = useState<number | null>(null);
 
-  const series = useAsync(() => api.get<{ series: Series[] }>('/api/uploads/series'), []);
+  const series = useAsync((signal) => api.get<{ series: Series[] }>('/api/uploads/series', { signal }), []);
   const options = series.data?.series ?? [];
   useEffect(() => {
     if (!seriesKey && options.length) {
@@ -55,8 +55,8 @@ export function Forecasting() {
   const body = useMemo(() => (values.length >= 2 && isNum(horizon) && isNum(conf) && (source === 'upload' || manualBad.length === 0) ? {
     series: values, method, horizon, confidence: conf, window: window ?? 3, alpha, holdout,
   } : null), [values.join(','), method, horizon, conf, window, alpha, holdout, source, manualBad.length]); // eslint-disable-line react-hooks/exhaustive-deps
-  const req = useDebounced(body, 250);
-  const res = useAsync(() => api.post<FcRes>('/api/finance/forecast', req), [JSON.stringify(req)], !!req);
+  const req = useDebounced(body, 150);
+  const res = useAsync((signal) => api.post<FcRes>('/api/finance/forecast', req, { signal }), [JSON.stringify(req)], !!req);
   const r = res.data;
 
   const chart = r ? [

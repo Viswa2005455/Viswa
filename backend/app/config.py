@@ -5,7 +5,7 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     fis_ai_provider: str = "none"
     anthropic_api_key: SecretStr | None = None
     fis_ai_model: str = "claude-opus-5-5"
+    fis_ai_timeout_seconds: float = Field(default=120.0, ge=5, le=600)  # per API attempt
+    fis_ai_max_retries: int = Field(default=2, ge=0, le=5)  # SDK retries 429, 5xx and connection errors
+    fis_ai_deadline_seconds: float = Field(default=300.0, ge=10, le=1800)  # whole answer, across tool rounds
 
     @field_validator("database_url")
     @classmethod

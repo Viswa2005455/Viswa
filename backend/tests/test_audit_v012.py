@@ -96,3 +96,12 @@ def test_forensic_flags_equity_turning_negative_and_skips_gmi_on_negative_margin
     assert any(f.title == "Equity turned zero or negative" for f in r.flags)
     gmi = next(c for c in r.beneish.components if c.key == "GMI")
     assert gmi.value is None  # -10% / -20% = 0.5 would wrongly read as "margins improving"
+
+
+def test_sensitivity_grid_refuses_assumption_the_terminal_method_ignores():
+    from app.finance.dcf import DCFInputs
+    from app.finance.sensitivity import two_way
+    base = DCFInputs(base_revenue=1000, revenue_growth=[0.05] * 5, ebit_margin=[0.2], tax_rate=0.25, da_pct_revenue=0.03,
+                     capex_pct_revenue=0.04, nwc_pct_revenue=0.1, wacc=0.10, terminal_growth=0.03, shares_outstanding=100)
+    with pytest.raises(FinanceInputError):
+        two_way(base, "wacc", [0.09, 0.1], "exit_multiple", [8, 10], "enterprise_value")

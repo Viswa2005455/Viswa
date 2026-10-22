@@ -100,8 +100,8 @@ function TwoWay({ model, output }: { model: DCFModel; output: string }) {
     model, x_variable: xVar, y_variable: yVar, output,
     x_values: range(baseOf(model, xVar), xStep, size), y_values: range(baseOf(model, yVar), yStep, size),
   } : null), [model, xVar, yVar, output, xStep, yStep, size]);
-  const req = useDebounced(body, 250);
-  const res = useAsync(() => api.post<Grid>('/api/finance/dcf/sensitivity', req), [JSON.stringify(req)], !!req);
+  const req = useDebounced(body, 150);
+  const res = useAsync((signal) => api.post<Grid>('/api/finance/dcf/sensitivity', req, { signal }), [JSON.stringify(req)], !!req);
   const g = res.data;
 
   const vals = g?.grid.flat().map((c) => c.value).filter(isNum) ?? [];
@@ -173,8 +173,8 @@ function OneWay({ model, output }: { model: DCFModel; output: string }) {
   const body = useMemo(() => (isNum(step) && step > 0 ? {
     model, x_variable: v, x_values: range(baseOf(model, v), step, 11), y_variable: other, y_values: [baseOf(model, other)], output,
   } : null), [model, v, step, output, other]);
-  const req = useDebounced(body, 250);
-  const res = useAsync(() => api.post<Grid>('/api/finance/dcf/sensitivity', req), [JSON.stringify(req)], !!req);
+  const req = useDebounced(body, 150);
+  const res = useAsync((signal) => api.post<Grid>('/api/finance/dcf/sensitivity', req, { signal }), [JSON.stringify(req)], !!req);
   const data = res.data?.x_values.map((x, i) => ({ x, value: res.data!.grid[0][i].value })) ?? [];
   return (
     <div className="grid cols-3">
@@ -219,8 +219,8 @@ function Tornado({ model, output }: { model: DCFModel; output: string }) {
     return { model, ranges, output };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model, shock, output]);
-  const req = useDebounced(body, 250);
-  const res = useAsync(() => api.post<TornadoRes>('/api/finance/dcf/tornado', req), [JSON.stringify(req)], !!req);
+  const req = useDebounced(body, 150);
+  const res = useAsync((signal) => api.post<TornadoRes>('/api/finance/dcf/tornado', req, { signal }), [JSON.stringify(req)], !!req);
   const t = res.data;
   const data = t?.bars.map((b) => ({
     name: VARS.find((v) => v.key === b.variable)!.label,
@@ -279,8 +279,8 @@ function BreakEven({ model, output }: { model: DCFModel; output: string }) {
   const [hi, setHi] = useState<number | null>(0.4);
   const d = VARS.find((x) => x.key === v)!;
   const body = isNum(target) && isNum(lo) && isNum(hi) && lo < hi ? { model, variable: v, output, target, low: lo, high: hi } : null;
-  const req = useDebounced(body, 300);
-  const res = useAsync(() => api.post<{ value: number | null; base_value: number; message: string | null }>('/api/finance/dcf/break-even', req), [JSON.stringify(req)], !!req);
+  const req = useDebounced(body, 150);
+  const res = useAsync((signal) => api.post<{ value: number | null; base_value: number; message: string | null }>('/api/finance/dcf/break-even', req, { signal }), [JSON.stringify(req)], !!req);
   return (
     <div className="grid cols-3">
       <Card title="Find the break-even input">

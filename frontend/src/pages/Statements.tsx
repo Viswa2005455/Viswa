@@ -72,8 +72,8 @@ export function Statements() {
   const [screener, setScreener] = useState<(ScreenerImport & { name: string; approx: boolean }) | null>(null);
   const { activeId } = useProjects();
 
-  const items = useAsync(() => api.get<{ items: Record<string, { statement: Stmt; label: string }> }>('/api/finance/statements/items'), []);
-  const uploads = useAsync(() => api.get<{ uploads: UploadSummary[] }>('/api/uploads'), []);
+  const items = useAsync((signal) => api.get<{ items: Record<string, { statement: Stmt; label: string }> }>('/api/finance/statements/items', { signal }), []);
+  const uploads = useAsync((signal) => api.get<{ uploads: UploadSummary[] }>('/api/uploads', { signal }), []);
   const candidates = uploads.data?.uploads.filter((u) => u.recommendations.some((r) => r.module === 'Financial Statements')) ?? [];
   const excelUploads = uploads.data?.uploads.filter((u) => /\.(xlsx|xlsm)$/i.test(u.name)) ?? [];
 
@@ -129,8 +129,8 @@ export function Statements() {
 
   const complete = data.lines.every((l) => l.label.trim()) && data.periods.every((p) => p.trim());
   const body = useMemo(() => (complete ? { periods: data.periods, lines: data.lines.map((l) => ({ ...l, key: l.key || null })) } : null), [data, complete]);
-  const req = useDebounced(body, 300);
-  const res = useAsync(() => api.post<Report>('/api/finance/statements', req), [JSON.stringify(req)], !!req);
+  const req = useDebounced(body, 150);
+  const res = useAsync((signal) => api.post<Report>('/api/finance/statements', req, { signal }), [JSON.stringify(req)], !!req);
   const r = res.data;
   const last = (r?.periods.length ?? 1) - 1;
   const lineByKey = (k: string) => r?.lines.find((l) => l.key === k);

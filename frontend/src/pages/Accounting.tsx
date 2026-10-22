@@ -59,8 +59,8 @@ export function Accounting() {
 }
 
 function useCalc<T>(path: string, body: unknown) {
-  const req = useDebounced(body, 300);
-  return useAsync(() => api.post<T>(path, req), [JSON.stringify(req)], !!req);
+  const req = useDebounced(body, 150);
+  return useAsync((signal) => api.post<T>(path, req, { signal }), [JSON.stringify(req)], !!req);
 }
 
 function Layout({ inputs, children, r }: { inputs: ReactNode; children: (d: never) => ReactNode; r: { data: unknown; error: string | null; loading: boolean } }) {

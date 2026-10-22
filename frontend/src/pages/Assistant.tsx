@@ -1,19 +1,22 @@
-import { Bot, Calculator, Lock, RotateCcw, Send, ShieldCheck, User } from 'lucide-react';
+import { Activity, Bot, Calculator, Lock, RotateCcw, Send, ShieldCheck, Square, User } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { SafeMarkdown } from '../components/SafeMarkdown';
 import { Badge, Callout, Card, ErrorBox, Field, PageHeader, Skeleton } from '../components/ui';
-import { api } from '../lib/api';
+import { api, isAbort } from '../lib/api';
 import { toCompany, useCompanySources, type StatementData } from '../lib/company';
 import { useDCFModel } from '../lib/dcfModel';
-import { loadRaw } from '../lib/storage';
+import { loadRaw, save } from '../lib/storage';
 import type { UploadSummary } from '../lib/types';
 import { useAsync } from '../lib/useApi';
 
-interface AIStatus { configured: boolean; provider: string; model: string | null; message: string; external: boolean }
+interface ModelInfo { id: string; label: string; note: string; default: boolean; refusal_fallback: boolean }
+interface AIStatus { configured: boolean; provider: string; model: string | null; message: string; external: boolean; models?: ModelInfo[] }
+interface ToolRun { name: string; ok: boolean; input?: unknown; output?: unknown; error?: string }
 type Mode = 'ask' | 'red_flags' | 'model_check' | 'challenge' | 'peers' | 'research' | 'report';
-interface Msg { role: 'user' | 'assistant'; content: string; tools?: { name: string; ok: boolean }[]; cost?: number | null; model?: string }
-interface Reply { reply: string; stop_reason: string; model: string; tools_used: { name: string; ok: boolean }[]; usage: { input_tokens: number; output_tokens: number; estimated_cost_usd: number | null } }
+interface Msg { role: 'user' | 'assistant'; content: string; tools?: ToolRun[]; cost?: number | null; model?: string; requested?: string; notice?: string | null; latency?: number; at?: string }
+interface Reply { reply: string; stop_reason: string; model: string; requested_model: string; model_notice: string | null; fallbacks: { from: string; to: string }[];
+  tools_used: ToolRun[]; usage: { input_tokens: number; output_tokens: number; estimated_cost_usd: number | null }; latency_ms: number; answered_at: string }
 
 const MODES: { value: Mode; label: string; hint: string; prompts: string[] }[] = [
   { value: 'ask', label: 'Analyse my data', hint: 'Questions on statements, models and files', prompts: ['Summarise the trend in margins and returns, with the drivers.', 'What explains the change in ROE over the period (DuPont)?', 'Assess working-capital efficiency and cash conversion.'] },
@@ -30,10 +33,10 @@ const TOPIC_MODE: Record<string, Mode> = { 'red-flags': 'red_flags', 'model-chec
 
 export function Assistant() {
   const [params] = useSearchParams();
-  const status = useAsync(() => api.get<AIStatus>('/api/ai/status'), []);
+  const status = useAsync((signal) => api.get<AIStatus>('/api/ai/status', { signal }), []);
   const { model: dcf, isExample: dcfExample } = useDCFModel();
   const { sources } = useCompanySources();
-  const uploads = useAsync(() => api.get<{ uploads: UploadSummary[] }>('/api/uploads'), []);
+  const uploads = useAsync((signal) => api.get<{ uploads: UploadSummary[] }>('/api/uploads', { signal }), []);
   const excel = (uploads.data?.uploads ?? []).filter((u) => /\.(xlsx|xlsm)$/i.test(u.name) && u.status === 'processed');
   const topic = params.get('topic') ?? '';
 
@@ -47,6 +50,11 @@ export function Assistant() {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [chosen, setChosen] = useState<string>(() => loadRaw('fis.ai.model', ''));
+  const ctl = useRef<AbortController | null>(null);
+  const models = status.data?.models ?? [];
+  const model = models.find((m) => m.id === chosen) ?? models.find((m) => m.default) ?? models[0];
+  const pickModel = (id: string) => { setChosen(id); save('fis.ai.model', id); };
   const endRef = useRef<HTMLDivElement>(null);
   const peerPicks = loadRaw<{ id: string; name: string }[]>('fis.peers.picked', []);
   const stmtSource = sources?.find((s) => s.id === stmtId) ?? (stmtId === 'first' ? sources?.find((s) => !s.isExample) ?? sources?.[0] : undefined);
@@ -95,17 +103,21 @@ export function Assistant() {
     setMsgs(history);
     setInput('');
     setBusy(true);
+    const c = new AbortController();
+    ctl.current = c;
     try {
       const attachments = await buildAttachments();
       const r = await api.post<Reply>('/api/ai/chat', {
-        mode, consent: true, attachments, messages: history.map((m) => ({ role: m.role, content: m.content })),
-      });
-      setMsgs([...history, { role: 'assistant', content: r.reply, tools: r.tools_used, cost: r.usage.estimated_cost_usd, model: r.model }]);
+        mode, consent: true, attachments, model: model?.id, messages: history.map((m) => ({ role: m.role, content: m.content })),
+      }, { signal: c.signal, timeoutMs: 330_000 });
+      setMsgs([...history, { role: 'assistant', content: r.reply, tools: r.tools_used, cost: r.usage.estimated_cost_usd, model: r.model,
+        requested: r.requested_model, notice: r.model_notice, latency: r.latency_ms, at: r.answered_at }]);
     } catch (e) {
-      setError((e as Error).message);
+      setError(isAbort(e) ? 'Cancelled. Nothing was answered; you can edit the question and send it again.' : (e as Error).message);
       setMsgs(msgs);
       setInput(q);
     } finally {
+      ctl.current = null;
       setBusy(false);
       setConsent(false); // consent is given per request
     }
@@ -117,9 +129,12 @@ export function Assistant() {
 
   return (
     <div className="page">
-      <PageHeader title="AI Finance Assistant" badge={configured ? <Badge tone="accent">Claude {status.data?.model === 'claude-opus-5-5' ? 'Opus 5.5' : status.data?.model}</Badge> : <Badge tone="warn">Not set up</Badge>}
+      <PageHeader title="AI Finance Assistant" badge={configured ? <Badge tone="accent">{model?.label ?? status.data?.model}</Badge> : <Badge tone="warn">Not set up</Badge>}
         subtitle="An analyst that works from your data and the app's tested calculators: every figure is computed by the engine and cited to its source, and accounting answers name the applicable standard."
-        actions={msgs.length > 0 && <button className="btn" onClick={() => { setMsgs([]); setError(null); }}><RotateCcw size={15} />New conversation</button>} />
+        actions={<>
+          <Link className="btn" to="/ai-health"><Activity size={15} />AI model health</Link>
+          {msgs.length > 0 && <button className="btn" onClick={() => { setMsgs([]); setError(null); }}><RotateCcw size={15} />New conversation</button>}
+        </>} />
 
       {status.loading ? <Skeleton h={60} /> : !configured && (
         <Callout tone="info" title="Set up the AI assistant (one time)">
@@ -135,6 +150,15 @@ export function Assistant() {
 
       <div className="grid cols-3 mt">
         <div className="stack">
+          {configured && models.length > 0 && (
+            <Card title="Model">
+              <Field label="AI model" hint={model ? `${model.note}${model.refusal_fallback ? ' If it declines a request, the provider may hand it to a fallback model; you will be told.' : ''}` : undefined}>
+                <select className="input" value={model?.id ?? ''} onChange={(e) => pickModel(e.target.value)} disabled={busy}>
+                  {models.map((m) => <option key={m.id} value={m.id}>{m.label}{m.default ? ' (default)' : ''}</option>)}
+                </select>
+              </Field>
+            </Card>
+          )}
           <Card title="What should the assistant do?">
             <div className="stack" style={{ gap: 6 }}>
               {MODES.map((m) => (
@@ -166,7 +190,7 @@ export function Assistant() {
           <Card title="Privacy" actions={<ShieldCheck size={18} className="pos" />}>
             <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 6, fontSize: 13 }}>
               <li>Your question and the ticked data are sent to Anthropic (Claude) only when you tick the consent box, for that one question.</li>
-              <li>Numbers come from the app's calculators (shown as "Used: …" under each answer).</li>
+              <li>Numbers come from the app's calculators. Their exact results are shown under each answer, separately from the AI's explanation.</li>
               <li>Answers can still contain mistakes. Check important figures against the source.</li>
               <li>Conclusions on accounting treatment must be confirmed against the authoritative literature and the entity's facts.</li>
             </ul>
@@ -186,11 +210,14 @@ export function Assistant() {
                 <div key={i} className={`chat-msg ${m.role}`}>
                   <div className="chat-avatar">{m.role === 'user' ? <User size={15} /> : <Bot size={15} />}</div>
                   <div className="chat-bubble">
+                    {m.notice && <div className="mb-sm"><Callout tone="warn">{m.notice}</Callout></div>}
                     {m.role === 'assistant' ? <SafeMarkdown text={m.content} /> : <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{m.content}</p>}
+                    {m.role === 'assistant' && m.tools && m.tools.length > 0 && <ToolResults tools={m.tools} />}
                     {m.role === 'assistant' && (
                       <div className="row faint" style={{ fontSize: 11.5, marginTop: 8, gap: 6 }}>
-                        {m.tools && m.tools.length > 0 && <><Calculator size={12} />Used: {[...new Set(m.tools.map((t) => TOOL_LABEL[t.name] ?? t.name))].join(', ')} ·</>}
-                        {typeof m.cost === 'number' && <>about ${m.cost.toFixed(3)} (≈ ₹{(m.cost * 85).toFixed(2)})</>}
+                        <span>AI explanation by {m.model}{m.requested && m.requested !== m.model ? ` (you chose ${m.requested})` : ''}</span>
+                        {typeof m.latency === 'number' && <span>· {(m.latency / 1000).toFixed(1)} s</span>}
+                        {typeof m.cost === 'number' && <span>· estimated cost ${m.cost.toFixed(4)}</span>}
                       </div>
                     )}
                   </div>
@@ -209,13 +236,31 @@ export function Assistant() {
                 <span><Lock size={12} style={{ verticalAlign: -1 }} /> Send my question{shared.length ? ' and this data' : ''} to Anthropic (Claude) to answer it{shared.length ? `: ${shared.join('; ')}` : ' (no data is attached)'}.</span>
               </label>
               <div className="row between">
-                <span className="faint" style={{ fontSize: 12 }}>{total > 0 ? `This conversation: about $${total.toFixed(3)} (≈ ₹${(total * 85).toFixed(2)})` : 'Ctrl + Enter to send'}</span>
-                <button className="btn primary" onClick={() => send(input)} disabled={!configured || busy || !input.trim()}><Send size={15} />{busy ? 'Working…' : 'Send'}</button>
+                <span className="faint" style={{ fontSize: 12 }}>{total > 0 ? `This conversation: estimated $${total.toFixed(4)} (list prices, US dollars)` : 'Ctrl + Enter to send'}</span>
+                {busy
+                  ? <button className="btn" onClick={() => ctl.current?.abort()}><Square size={14} />Cancel</button>
+                  : <button className="btn primary" onClick={() => send(input)} disabled={!configured || !input.trim()}><Send size={15} />Send</button>}
               </div>
             </div>
           </Card>
         </div>
       </div>
     </div>
+  );
+}
+
+/** Deterministic results from the app's engine, shown apart from the AI's wording so figures can be checked. */
+function ToolResults({ tools }: { tools: ToolRun[] }) {
+  return (
+    <details className="tool-results mt-sm">
+      <summary><Calculator size={12} style={{ verticalAlign: -1 }} /> Calculated by the app's engine (not by the AI): {[...new Set(tools.map((t) => TOOL_LABEL[t.name] ?? t.name))].join(', ')}</summary>
+      {tools.map((t, i) => (
+        <div key={i} className="mt-sm">
+          <div style={{ fontSize: 12, fontWeight: 600 }}>{TOOL_LABEL[t.name] ?? t.name} {t.ok ? <Badge tone="pos">ok</Badge> : <Badge tone="neg">input error</Badge>}</div>
+          {t.ok ? <pre className="code-block">{JSON.stringify(t.output, null, 2)}</pre> : <div className="neg" style={{ fontSize: 12 }}>{t.error}</div>}
+          {t.input != null && <details><summary className="faint" style={{ fontSize: 11.5 }}>Inputs used</summary><pre className="code-block">{JSON.stringify(t.input, null, 2)}</pre></details>}
+        </div>
+      ))}
+    </details>
   );
 }

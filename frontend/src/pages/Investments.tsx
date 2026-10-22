@@ -54,8 +54,8 @@ export function Investments() {
 }
 
 function useCalc<T>(path: string, body: unknown) {
-  const req = useDebounced(body, 300);
-  return useAsync(() => api.post<T>(path, req), [JSON.stringify(req)], !!req);
+  const req = useDebounced(body, 150);
+  return useAsync((signal) => api.post<T>(path, req, { signal }), [JSON.stringify(req)], !!req);
 }
 function Out<T>({ r, children }: { r: { data: T | null; error: string | null; loading: boolean }; children: (d: T) => React.ReactNode }) {
   if (r.error) return <ErrorBox error={r.error} />;

@@ -59,7 +59,9 @@ def test_chat_runs_tool_loop_and_reports_usage():
     res = chat(client, "claude-opus-5-5", "red_flags", [{"role": "user", "content": "Explain my red flags"}],
                [Attachment("TCS statements", "statements", COMPANY)])
     assert res.reply.startswith("DSRI is 1.5") and res.stop_reason == "end_turn"
-    assert res.tools_used == [{"name": "red_flag_scan", "ok": True}]
+    assert [(t["name"], t["ok"]) for t in res.tools_used] == [("red_flag_scan", True)]
+    # The engine's own output and inputs are returned so the UI can show them apart from the AI's wording.
+    assert res.tools_used[0]["output"]["beneish"]["components"] and res.tools_used[0]["input"]["periods"] == ["FY24", "FY25"]
     first, second = client.calls
     assert first["model"] == "claude-opus-5-5" and first["fallbacks"] == "default"
     assert first["betas"] == ["server-side-fallback-2026-07-01"]
@@ -163,3 +165,183 @@ def test_professional_prompt_and_research_mode():
     assert "research" in assistant.MODES and "tutor" not in assistant.MODES
     names = [t["name"] for t in assistant.TOOLS]
     assert len(names) == len(set(names)) == 15
+
+
+# ---------------- v0.12: provider adapter, failures, fallbacks and model selection ----------------
+
+import httpx2  # noqa: E402 - the anthropic 1.x SDK is built on httpx2
+import anthropic  # noqa: E402
+
+from app.ai import provider as prov  # noqa: E402
+from app.ai.provider import AIError, classify_error  # noqa: E402
+
+REQ = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+
+
+def status_error(cls, code):
+    return cls("boom", response=httpx2.Response(code, request=REQ), body=None)
+
+
+class RaisingClient(FakeClient):
+    def __init__(self, exc):
+        super().__init__([])
+        self.exc = exc
+
+    def _create(self, **kw):
+        self.calls.append(kw)
+        raise self.exc
+
+
+HISTORY = [{"role": "user", "content": "Hi"}]
+
+
+@pytest.mark.parametrize("exc, category", [
+    (status_error(anthropic.AuthenticationError, 401), "auth"),
+    (status_error(anthropic.PermissionDeniedError, 403), "permission"),
+    (status_error(anthropic.NotFoundError, 404), "model_not_found"),
+    (status_error(anthropic.RateLimitError, 429), "rate_limit"),
+    (status_error(anthropic.InternalServerError, 500), "server"),
+    (status_error(anthropic.APIStatusError, 529), "overloaded"),
+    (anthropic.APITimeoutError(request=REQ), "timeout"),
+    (anthropic.APIConnectionError(request=REQ), "network"),
+])
+def test_provider_failures_are_categorised_never_fabricated(exc, category):
+    with pytest.raises(AIError) as e:
+        chat(RaisingClient(exc), "claude-opus-5-5", "ask", HISTORY, [])
+    assert e.value.category == category and "sk-" not in str(e.value)
+    assert classify_error(exc).category == category
+
+
+def test_malformed_response_is_rejected():
+    bad = NS(content=None, stop_reason="end_turn", usage=usage(), model="claude-opus-5-5")
+    with pytest.raises(AIError) as e:
+        chat(FakeClient([bad]), "claude-opus-5-5", "ask", HISTORY, [])
+    assert e.value.category == "malformed_response"
+    no_tool = NS(content=[NS(type="text", text="x")], stop_reason="tool_use", usage=usage(), model="claude-opus-5-5")
+    with pytest.raises(AIError):
+        chat(FakeClient([no_tool]), "claude-opus-5-5", "ask", HISTORY, [])
+
+
+def test_deadline_stops_a_long_tool_loop():
+    loop = FakeClient([tool_call("npv_irr", {"cash_flows": [-1, 2], "rate": 0.1}) for _ in range(20)])
+    with pytest.raises(AIError) as e:
+        chat(loop, "claude-opus-5-5", "ask", HISTORY, [], deadline_seconds=-1)
+    assert e.value.category == "timeout" and loop.calls == []
+
+
+def test_fallback_model_is_reported_not_hidden():
+    resp = NS(content=[NS(type="fallback", from_=NS(model="claude-opus-5-5"), to=NS(model="claude-opus-5")),
+                       NS(type="text", text="Answer")], stop_reason="end_turn",
+              usage=NS(**vars(usage()), iterations=[NS(type="message"), NS(type="fallback_message")]), model="claude-opus-5")
+    res = chat(FakeClient([resp]), "claude-opus-5-5", "ask", HISTORY, [])
+    assert res.model == "claude-opus-5" and res.requested_model == "claude-opus-5-5"
+    assert res.fallbacks == [{"from": "claude-opus-5-5", "to": "claude-opus-5"}]
+
+
+def test_served_model_differs_without_block_is_still_reported():
+    resp = final("Answer")
+    resp.model = "claude-opus-4-8"
+    res = chat(FakeClient([resp]), "claude-opus-5-5", "ask", HISTORY, [])
+    assert res.fallbacks == [{"from": "claude-opus-5-5", "to": "claude-opus-4-8"}]
+
+
+def test_model_selection_changes_the_request_and_fallback_parameter():
+    for model, fallback in (("claude-sonnet-5-5", True), ("claude-haiku-5-5", False)):
+        fake = FakeClient([final("ok")])
+        fake.responses[0].model = model
+        res = chat(fake, model, "ask", HISTORY, [])
+        assert fake.calls[0]["model"] == model and res.model == model and res.fallbacks == []
+        assert ("fallbacks" in fake.calls[0]) is fallback  # Haiku 5.5 has no server-side fallback
+    with pytest.raises(ValueError):
+        chat(FakeClient([final("x")]), "gpt-4", "ask", HISTORY, [])
+
+
+@pytest.fixture
+def ai_on(monkeypatch):
+    monkeypatch.setenv("FIS_AI_PROVIDER", "anthropic")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-not-real")
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    prov.reset_health()
+    yield
+    get_settings.cache_clear()
+    prov.reset_health()
+
+
+BODY = {"mode": "ask", "messages": [{"role": "user", "content": "Hello"}], "consent": True}
+
+
+def test_chat_endpoint_model_choice_errors_and_health(client, monkeypatch, ai_on):
+    fake = FakeClient([final("Sonnet here")])
+    fake.responses[0].model = "claude-sonnet-5-5"
+    monkeypatch.setattr("app.ai.provider.AnthropicProvider.client", lambda self: fake)
+    r = client.post("/api/ai/chat", json={**BODY, "model": "claude-sonnet-5-5"})
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert fake.calls[0]["model"] == "claude-sonnet-5-5" and out["model"] == out["requested_model"] == "claude-sonnet-5-5"
+    assert out["model_notice"] is None and out["answered_at"]
+    assert client.post("/api/ai/chat", json={**BODY, "model": "not-a-model"}).status_code == 422
+
+    monkeypatch.setattr("app.ai.provider.AnthropicProvider.client",
+                        lambda self: RaisingClient(status_error(anthropic.RateLimitError, 429)))
+    r = client.post("/api/ai/chat", json=BODY)
+    assert r.status_code == 429 and r.json()["detail"]["category"] == "rate_limit"
+    assert "reply" not in r.json()  # no made-up answer when the provider fails
+
+    h = client.get("/api/ai/health").json()
+    rows = {m["id"]: m["health"] for m in h["models"]}
+    assert rows["claude-sonnet-5-5"]["state"] == "ok" and rows["claude-sonnet-5-5"]["served_model"] == "claude-sonnet-5-5"
+    assert rows["claude-opus-5-5"]["state"] == "failed" and rows["claude-opus-5-5"]["error_category"] == "rate_limit"
+    assert rows["claude-haiku-5-5"]["state"] == "untested"
+    assert h["credentials_present"] is True and "sk-test" not in str(h)
+
+
+def test_fallback_notice_reaches_the_user(client, monkeypatch, ai_on):
+    resp = final("Answer")
+    resp.model = "claude-opus-5"
+    monkeypatch.setattr("app.ai.provider.AnthropicProvider.client", lambda self: FakeClient([resp]))
+    out = client.post("/api/ai/chat", json=BODY).json()
+    assert out["model"] == "claude-opus-5" and out["requested_model"] == "claude-opus-5-5"
+    assert "fallback" in out["model_notice"]
+
+
+class FakeChecker:
+    def __init__(self, exc=None):
+        self.exc = exc
+        self.models = NS(retrieve=self._retrieve)
+        self.messages = NS(create=self._create)
+
+    def with_options(self, **kw):
+        return self
+
+    def _retrieve(self, model):
+        if self.exc:
+            raise self.exc
+        return NS(id=model)
+
+    def _create(self, **kw):
+        if self.exc:
+            raise self.exc
+        return NS(model=kw["model"], content=[NS(type="text", text="OK")])
+
+
+def test_health_check_needs_confirmation_and_records_results(client, monkeypatch, ai_on):
+    monkeypatch.setattr("app.ai.provider.AnthropicProvider.client", lambda self: FakeChecker())
+    body = {"model": "claude-haiku-5-5", "kind": "access"}
+    assert client.post("/api/ai/health/check", json=body).status_code == 400  # not confirmed
+    r = client.post("/api/ai/health/check", json={**body, "confirm": True})
+    assert r.status_code == 200 and r.json()["state"] == "ok" and r.json()["latency_ms"] is not None
+    r = client.post("/api/ai/health/check", json={**body, "kind": "reply", "confirm": True})
+    assert r.json()["served_model"] == "claude-haiku-5-5"
+    monkeypatch.setattr("app.ai.provider.AnthropicProvider.client",
+                        lambda self: FakeChecker(status_error(anthropic.AuthenticationError, 401)))
+    r = client.post("/api/ai/health/check", json={**body, "confirm": True})
+    assert r.json()["state"] == "failed" and r.json()["error_category"] == "auth"
+    assert client.post("/api/ai/health/check", json={"model": "x", "confirm": True}).status_code == 422
+
+
+def test_health_without_provider(client):
+    h = client.get("/api/ai/health").json()
+    assert h["configured"] is False and h["provider"] == "none" and h["models"] == []
+    assert client.post("/api/ai/health/check", json={"model": "claude-opus-5-5", "confirm": True}).status_code == 503

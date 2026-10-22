@@ -29,8 +29,8 @@ export function ReverseDCF({ model, price, setPrice }: { model: DCFModel; price:
   const options = [['revenue_growth', 'Revenue growth'], ['ebit_margin', 'EBIT margin'], ['wacc', 'WACC'],
     ...(model.terminal_method === 'gordon' ? [['terminal_growth', 'Terminal growth']] : [['exit_multiple', 'Exit multiple']])];
   const v = options.some(([k]) => k === variable) ? variable : 'revenue_growth';
-  const req = useDebounced(isNum(price) && price > 0 ? { model, target: price, variable: v, output } : null, 300);
-  const res = useAsync(() => api.post<Reverse>('/api/finance/dcf/reverse', req), [JSON.stringify(req)], !!req);
+  const req = useDebounced(isNum(price) && price > 0 ? { model, target: price, variable: v, output } : null, 150);
+  const res = useAsync((signal) => api.post<Reverse>('/api/finance/dcf/reverse', req, { signal }), [JSON.stringify(req)], !!req);
   const r = req ? res.data : null;
   const isMult = v === 'exit_multiple';
   const fmtX = (x: number | null) => (isNum(x) ? (isMult ? `${fmtNum(x, 1)}×` : fmtPct(x, 1)) : '—');

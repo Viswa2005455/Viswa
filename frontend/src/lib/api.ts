@@ -2,11 +2,19 @@
 
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  /** Machine-readable reason from the server (e.g. AI error categories such as "timeout" or "rate_limit"). */
+  category?: string;
+  constructor(message: string, status: number, category?: string) {
     super(message);
     this.status = status;
+    this.category = category;
   }
 }
+
+/** Options for one request: a caller's AbortSignal cancels it (e.g. when newer inputs arrive). */
+export interface RequestOpts { signal?: AbortSignal; timeoutMs?: number }
+
+export const isAbort = (e: unknown) => e instanceof DOMException && e.name === 'AbortError';
 
 /** Fired when the server says the session is missing or expired; the auth provider listens for it. */
 export const UNAUTHORIZED_EVENT = 'fis:unauthorized';
@@ -15,36 +23,69 @@ function signalUnauthorized(path: string) {
 }
 
 const BACKEND_DOWN = 'The app\'s backend is not answering. Check the "Finance Studio - BACKEND" window: if it is closed, run start-windows.bat again; if it shows an error, send a screenshot of it.';
+const DEFAULT_TIMEOUT_MS = 60_000;
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  let res: Response;
+async function once<T>(path: string, init: RequestInit, opts: RequestOpts): Promise<T> {
+  const ctl = new AbortController();
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; ctl.abort(); }, timeoutMs);
+  const forward = () => ctl.abort();
+  if (opts.signal?.aborted) ctl.abort();
+  opts.signal?.addEventListener('abort', forward);
   try {
-    res = await fetch(path, init);
-  } catch {
-    throw new ApiError(BACKEND_DOWN, 0);
+    let res: Response;
+    let text: string;
+    try {
+      res = await fetch(path, { ...init, signal: ctl.signal });
+      text = await res.text();
+    } catch (e) {
+      if (opts.signal?.aborted) throw new DOMException('Request cancelled', 'AbortError');
+      if (timedOut) throw new ApiError(`The server did not answer within ${Math.round(timeoutMs / 1000)} seconds. Try again.`, 0, 'timeout');
+      throw new ApiError(BACKEND_DOWN, 0, isAbort(e) ? 'aborted' : 'network');
+    }
+    let body: unknown = null;
+    try {
+      body = text ? JSON.parse(text) : null;
+    } catch {
+      // non-JSON (e.g. proxy error page)
+    }
+    if (res.status === 401) signalUnauthorized(path);
+    if (!res.ok) {
+      const detail = (body as { detail?: unknown } | null)?.detail;
+      if (detail && typeof detail === 'object' && 'message' in detail) {
+        const d = detail as { message: string; category?: string };
+        throw new ApiError(d.message, res.status, d.category);
+      }
+      const msg = typeof detail === 'string' ? detail : (res.status === 502 || res.status === 504 || res.status === 500) && !body
+        ? BACKEND_DOWN
+        : `Request failed (${res.status}).`;
+      throw new ApiError(msg, res.status);
+    }
+    return body as T;
+  } finally {
+    clearTimeout(timer);
+    opts.signal?.removeEventListener('abort', forward);
   }
-  const text = await res.text();
-  let body: unknown = null;
+}
+
+async function request<T>(path: string, init: RequestInit = {}, opts: RequestOpts = {}): Promise<T> {
+  const idempotent = !init.method || init.method === 'GET';
   try {
-    body = text ? JSON.parse(text) : null;
-  } catch {
-    // non-JSON (e.g. proxy error page)
+    return await once<T>(path, init, opts);
+  } catch (e) {
+    // One retry for reads that failed on the network or a gateway hiccup; writes are never repeated.
+    const retryable = e instanceof ApiError && (e.category === 'network' || e.status === 502 || e.status === 503);
+    if (!idempotent || !retryable || opts.signal?.aborted) throw e;
+    await new Promise((r) => setTimeout(r, 400));
+    return once<T>(path, init, opts);
   }
-  if (res.status === 401) signalUnauthorized(path);
-  if (!res.ok) {
-    const detail = (body as { detail?: unknown } | null)?.detail;
-    const msg = typeof detail === 'string' ? detail : res.status === 502 || res.status === 504 || res.status === 500 && !body
-      ? BACKEND_DOWN
-      : `Request failed (${res.status}).`;
-    throw new ApiError(msg, res.status);
-  }
-  return body as T;
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, data: unknown) =>
-    request<T>(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
+  get: <T>(path: string, opts?: RequestOpts) => request<T>(path, {}, opts),
+  post: <T>(path: string, data: unknown, opts?: RequestOpts) =>
+    request<T>(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }, opts),
   del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
   put: <T>(path: string, data: unknown) =>
     request<T>(path, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
@@ -74,7 +115,7 @@ export async function downloadPost(path: string, data: unknown, fallbackName: st
   if (res.status === 401) signalUnauthorized(path);
   if (!res.ok) {
     let msg = `Request failed (${res.status}).`;
-    try { const b = await res.json(); if (typeof b?.detail === 'string') msg = b.detail; } catch { /* not JSON */ }
+    try { const b = await res.json(); if (typeof b?.detail === 'string') msg = b.detail; else if (typeof b?.detail?.message === 'string') msg = b.detail.message; } catch { /* not JSON */ }
     throw new ApiError(msg, res.status);
   }
   const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? fallbackName;

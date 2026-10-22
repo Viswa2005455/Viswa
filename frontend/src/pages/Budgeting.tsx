@@ -77,8 +77,8 @@ export function Budgeting() {
 
   const bad = v.lines.filter(incomplete).map((l) => l.name);
   const body = useMemo(() => (bad.length || !v.lines.length ? null : toPayload(v)), [v, bad.length]);
-  const req = useDebounced(body, 300);
-  const res = useAsync(() => api.post<BudgetRes>('/api/finance/budget', req), [JSON.stringify(req)], !!req);
+  const req = useDebounced(body, 150);
+  const res = useAsync((signal) => api.post<BudgetRes>('/api/finance/budget', req, { signal }), [JSON.stringify(req)], !!req);
   const r = res.data;
   const outByIndex = r && r.lines.length === v.lines.length ? r.lines : null;
   const locked = v.status === 'Approved';
@@ -383,8 +383,8 @@ function FlexibleBudget() {
   const [levels, setLevels] = useState('4000, 5000, 6000, 7000');
   const lv = levels.split(/[\s,;]+/).filter(Boolean).map(Number);
   const ok = isNum(fixed) && isNum(variable) && lv.length > 0 && lv.every((x) => Number.isFinite(x) && x >= 0);
-  const req = useDebounced(ok ? { fixed_cost: fixed, variable_cost_per_unit: variable, activity_levels: lv } : null, 300);
-  const res = useAsync(() => api.post<{ levels: { activity: number; fixed: number; variable: number; total: number; cost_per_unit: number | null }[] }>('/api/finance/budget/flexible', req), [JSON.stringify(req)], !!req);
+  const req = useDebounced(ok ? { fixed_cost: fixed, variable_cost_per_unit: variable, activity_levels: lv } : null, 150);
+  const res = useAsync((signal) => api.post<{ levels: { activity: number; fixed: number; variable: number; total: number; cost_per_unit: number | null }[] }>('/api/finance/budget/flexible', req, { signal }), [JSON.stringify(req)], !!req);
   return (
     <Card title="Flexible budget" subtitle="Cost at different activity levels (example inputs)">
       <div className="form-grid">

@@ -111,8 +111,8 @@ function ProjectList({ items, selected, activeId, onSelect }: { items: Project[]
 function ProjectDetail({ id, onDeleted }: { id: string; onDeleted: () => void }) {
   const toast = useToast();
   const { activeId, setActive, reload } = useProjects();
-  const d = useAsync(() => api.get<Detail>(`/api/projects/${id}`), [id]);
-  const act = useAsync(() => api.get<{ activity: ActivityRow[] }>(`/api/activity?project_id=${id}&limit=50`), [id]);
+  const d = useAsync((signal) => api.get<Detail>(`/api/projects/${id}`, { signal }), [id]);
+  const act = useAsync((signal) => api.get<{ activity: ActivityRow[] }>(`/api/activity?project_id=${id}&limit=50`, { signal }), [id]);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ name: '', description: '', currency: 'INR', units: 'lakhs' });
   const [confirmName, setConfirmName] = useState<string | null>(null);

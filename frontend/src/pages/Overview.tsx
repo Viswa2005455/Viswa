@@ -35,10 +35,10 @@ function delta(v: number, prior?: number) {
 }
 
 function SampleOverview({ hasCompanies, onBack }: { hasCompanies: boolean; onBack: () => void }) {
-  const dash = useAsync(() => api.get<Dashboard>('/api/dashboard/sample'), []);
+  const dash = useAsync((signal) => api.get<Dashboard>('/api/dashboard/sample', { signal }), []);
   const { user } = useAuth();
   const { active, activeId } = useProjects();
-  const uploads = useAsync(() => api.get<{ uploads: UploadSummary[] }>(`/api/uploads${activeId ? `?project_id=${activeId}` : ''}`), [activeId]);
+  const uploads = useAsync((signal) => api.get<{ uploads: UploadSummary[] }>(`/api/uploads${activeId ? `?project_id=${activeId}` : ''}`, { signal }), [activeId]);
   const d = dash.data;
 
   const chartData = d ? [
@@ -84,18 +84,12 @@ function SampleOverview({ hasCompanies, onBack }: { hasCompanies: boolean; onBac
               <div className="chart tall">
                 <ResponsiveContainer>
                   <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="revFill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="var(--chart-1)" stopOpacity={0.28} />
-                        <stop offset="100%" stopColor="var(--chart-1)" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
                     <CartesianGrid {...gridProps} />
                     <XAxis dataKey="period" {...axisProps} />
                     <YAxis {...axisProps} width={56} tickFormatter={(v) => fmtNum(v, 0)} />
                     <Tooltip content={<ChartTooltip format={(v) => L(v)} />} />
                     <Area dataKey="band" name="Prediction interval" stroke="none" fill={C.band} isAnimationActive />
-                    <Area dataKey="revenue" name="Revenue (actual)" stroke={C.c1} strokeWidth={2.2} fill="url(#revFill)" dot={false} />
+                    <Area dataKey="revenue" name="Revenue (actual)" stroke={C.c1} strokeWidth={2.2} fill={C.c1} fillOpacity={0.08} dot={false} />
                     <Line dataKey="budget_revenue" name="Budget" stroke={C.c3} strokeWidth={1.6} strokeDasharray="2 4" dot={false} />
                     <Line dataKey="forecast" name="Forecast" stroke={C.c2} strokeWidth={2.2} strokeDasharray="6 4" dot={false} />
                     <Line dataKey="ebitda" name="EBITDA" stroke={C.c4} strokeWidth={1.8} dot={false} />

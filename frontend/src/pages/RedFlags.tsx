@@ -67,8 +67,8 @@ export function RedFlags() {
     if (shares.some(isNum)) extra.shares_outstanding = shares;
     return { periods, items: { ...items, ...extra } };
   }, [company, market]);
-  const req = useDebounced(body, 300);
-  const res = useAsync(() => api.post<Report>('/api/analysis/forensic', req), [JSON.stringify(req)], !!req && (req?.periods.length ?? 0) >= 2);
+  const req = useDebounced(body, 150);
+  const res = useAsync((signal) => api.post<Report>('/api/analysis/forensic', req, { signal }), [JSON.stringify(req)], !!req && (req?.periods.length ?? 0) >= 2);
   const r = res.data;
   const tooFew = !!company && company.data.periods.length < 2;
 

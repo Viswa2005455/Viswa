@@ -94,8 +94,8 @@ function CashBudget() {
   const d = s.data;
   const incomplete = d.opening === null || [...d.receipts, ...d.payments].some((l) => l.values.some((v) => v === null) || !l.name.trim());
   const body = useMemo(() => (incomplete ? null : { periods: d.periods, opening_cash: d.opening, minimum_cash: d.minimum ?? 0, receipts: d.receipts, payments: d.payments }), [d, incomplete]);
-  const req = useDebounced(body, 300);
-  const res = useAsync(() => api.post<CBRes>('/api/finance/cash-budget', req), [JSON.stringify(req)], !!req);
+  const req = useDebounced(body, 150);
+  const res = useAsync((signal) => api.post<CBRes>('/api/finance/cash-budget', req, { signal }), [JSON.stringify(req)], !!req);
   const r = res.data;
 
   const exportCsv = () => {
@@ -202,8 +202,8 @@ function WorkingCapital() {
   const cur = settings.currency;
   const [v, setV] = useState<Record<string, number | null>>({ revenue: 5000, cogs: 3100, receivables: 720, inventory: 610, payables: 430, target_dso: 45, target_dio: 60, target_dpo: 55, days: 365 });
   const ok = Object.values(v).every(isNum);
-  const req = useDebounced(ok ? v : null, 300);
-  const res = useAsync(() => api.post<WCRes>('/api/finance/working-capital', req), [JSON.stringify(req)], !!req);
+  const req = useDebounced(ok ? v : null, 150);
+  const res = useAsync((signal) => api.post<WCRes>('/api/finance/working-capital', req, { signal }), [JSON.stringify(req)], !!req);
   const r = res.data;
   const f = (k: string, label: string, hint?: string) => <NumberField label={label} value={v[k]} onChange={(n) => setV({ ...v, [k]: n })} required min={0} hint={hint} />;
   const daysChart = r ? [

@@ -56,8 +56,8 @@ function Check({ label, checked, onChange }: { label: ReactNode; checked: boolea
   return <label className="row" style={{ gap: 8, fontSize: 13 }}><input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />{label}</label>;
 }
 function useCalc<T>(path: string, body: unknown) {
-  const req = useDebounced(body, 300);
-  return useAsync(() => api.post<T>(path, req), [JSON.stringify(req)], !!req);
+  const req = useDebounced(body, 150);
+  return useAsync((signal) => api.post<T>(path, req, { signal }), [JSON.stringify(req)], !!req);
 }
 
 export function GST() {
@@ -65,7 +65,7 @@ export function GST() {
   const [state, setState] = useState<{ m: Model; example: boolean }>(() => withDefaults(loadRaw('fis.gst', { m: EXAMPLE, example: true })));
   const m = state.m;
   const set = (p: Partial<Model>) => { const s = { m: { ...m, ...p }, example: false }; setState(s); save('fis.gst', s); };
-  const info = useAsync(() => api.get<Info>('/api/gst/info'), []);
+  const info = useAsync((signal) => api.get<Info>('/api/gst/info', { signal }), []);
   return (
     <div className="page">
       <PageHeader title="GST Returns" badge={state.example ? <Badge tone="sample">Example figures</Badge> : <Badge tone="accent">Your figures</Badge>}

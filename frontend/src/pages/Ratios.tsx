@@ -43,7 +43,7 @@ export function Ratios() {
   const [sources, setSources] = useState<Record<string, string>>({});
   const [pending, setPending] = useState<{ file: string; rows: (Mapping & { accept: boolean })[] } | null>(null);
 
-  const uploads = useAsync(() => api.get<{ uploads: UploadSummary[] }>('/api/uploads'), []);
+  const uploads = useAsync((signal) => api.get<{ uploads: UploadSummary[] }>('/api/uploads', { signal }), []);
   const candidates = uploads.data?.uploads.filter((u) => u.recommendations.some((r) => r.module === 'Ratio Analysis')) ?? [];
   const loadMapping = async (id: string) => {
     try {
@@ -68,8 +68,8 @@ export function Ratios() {
   };
 
   const body = useMemo(() => ({ data: Object.fromEntries(Object.entries(data).filter(([, v]) => isNum(v))), period_days: days ?? 365 }), [data, days]);
-  const req = useDebounced(body, 250);
-  const res = useAsync(() => api.post<{ ratios: Ratio[] }>('/api/finance/ratios', req), [JSON.stringify(req)]);
+  const req = useDebounced(body, 150);
+  const res = useAsync((signal) => api.post<{ ratios: Ratio[] }>('/api/finance/ratios', req, { signal }), [JSON.stringify(req)]);
   const ratios = res.data?.ratios ?? [];
   const cats = ['All', ...Array.from(new Set(ratios.map((r) => r.category)))];
   const shown = ratios.filter((r) => cat === 'All' || r.category === cat);

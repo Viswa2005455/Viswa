@@ -31,6 +31,8 @@ def two_way(base: DCFInputs, x_var: str, x_values: list[float], y_var: str, y_va
         raise FinanceInputError("Choose two different variables.")
     if len(x_values) * len(y_values) > 400:
         raise FinanceInputError("Sensitivity grid is limited to 400 cells.")
+    check_variable(base, x_var)
+    check_variable(base, y_var)
     grid: list[list[GridCell]] = []
     for y in y_values:
         row = []

@@ -58,8 +58,8 @@ export function Scenarios() {
     const extra = scenarios.slice(1).flatMap(attributionRuns);
     return { model, scenarios: [...scenarios, ...extra].map(({ name, id, ...rest }) => ({ ...rest, name: id.includes('|') ? name : id })) };
   }, [model, scenarios]);
-  const req = useDebounced(payload, 300);
-  const res = useAsync(() => api.post<{ scenarios: ScenarioRes[] }>('/api/finance/dcf/scenarios', req), [JSON.stringify(req)]);
+  const req = useDebounced(payload, 150);
+  const res = useAsync((signal) => api.post<{ scenarios: ScenarioRes[] }>('/api/finance/dcf/scenarios', req, { signal }), [JSON.stringify(req)]);
 
   const byId = new Map<string, ScenarioRes>();
   res.data?.scenarios.forEach((r) => byId.set(r.name, r));

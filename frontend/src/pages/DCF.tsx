@@ -19,8 +19,8 @@ export function DCF() {
   const { settings } = useSettings();
   const cur = settings.currency;
   const [marketPrice, setMarketPrice] = useMarketPrice();
-  const req = useDebounced(model, 250);
-  const res = useAsync(() => api.post<DCFResult>('/api/finance/dcf', req), [JSON.stringify(req)]);
+  const req = useDebounced(model, 150);
+  const res = useAsync((signal) => api.post<DCFResult>('/api/finance/dcf', req, { signal }), [JSON.stringify(req)]);
   const r = res.data;
   const stale = res.error ? null : r;
 
@@ -180,8 +180,8 @@ function WaccBuilder({ onUse }: { onUse: (w: number) => void }) {
   const [t, setT] = useState<number | null>(0.25);
   const ok = [rf, beta, rm, e, d, rd, t].every(isNum);
   const re = ok ? (rf as number) + (beta as number) * ((rm as number) - (rf as number)) : null;
-  const req = useDebounced(ok ? { equity_value: e, debt_value: d, cost_of_equity: re, pre_tax_cost_of_debt: rd, tax_rate: t } : null, 250);
-  const w = useAsync(() => api.post<WACCRes>('/api/finance/wacc', req), [JSON.stringify(req)], !!req);
+  const req = useDebounced(ok ? { equity_value: e, debt_value: d, cost_of_equity: re, pre_tax_cost_of_debt: rd, tax_rate: t } : null, 150);
+  const w = useAsync((signal) => api.post<WACCRes>('/api/finance/wacc', req, { signal }), [JSON.stringify(req)], !!req);
 
   return (
     <Card title="WACC builder (CAPM)" subtitle="Example inputs — replace with sourced market data">

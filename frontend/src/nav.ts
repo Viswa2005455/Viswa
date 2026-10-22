@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, FolderKanban, Wallet, TrendingUp, GitCompareArrows, FileSpreadsheet, Percent, Layers, SlidersHorizontal,
-  Calculator, Landmark, Droplets, UploadCloud, Code2, Bot, FileText, GraduationCap, Settings as SettingsIcon, ShieldAlert, Users, FileSearch, Factory, BookOpenCheck, LineChart, ChartCandlestick, Receipt, ReceiptIndianRupee,
+  Calculator, Landmark, Droplets, UploadCloud, Code2, Bot, FileText, GraduationCap, Settings as SettingsIcon, ShieldAlert, Users, FileSearch, Factory, BookOpenCheck, LineChart, ChartCandlestick, Receipt, ReceiptIndianRupee, Activity,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -32,6 +32,7 @@ export const NAV: NavItem[] = [
   { to: '/model-check', label: 'Excel Model Checker', icon: FileSearch, ready: true, group: 'Tools' },
   { to: '/code-lab', label: 'Data & Code Lab', icon: Code2, ready: false, group: 'Tools' },
   { to: '/assistant', label: 'AI Finance Assistant', icon: Bot, ready: true, group: 'Tools' },
+  { to: '/ai-health', label: 'AI Model Health', icon: Activity, ready: true, group: 'Tools' },
   { to: '/reports', label: 'Reports & Exports', icon: FileText, ready: true, group: 'Tools' },
   { to: '/learn', label: 'Methodology Library', icon: GraduationCap, ready: true, group: 'Reference' },
   { to: '/settings', label: 'Settings', icon: SettingsIcon, ready: true, group: 'Reference' },

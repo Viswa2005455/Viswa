@@ -32,7 +32,7 @@ export function CompanyDashboard({ sources, initialId }: { sources: CompanySourc
   const [data, setData] = useState<StatementData | null>(null);
   useEffect(() => { setData(null); src.load().then(setData).catch(() => setData(null)); save('fis.dashboard.company', src.id); }, [src]);
   const company = useMemo(() => (data ? toCompany(data) : null), [data]);
-  const res = useAsync(() => api.post<Profile>('/api/analysis/profile', company), [JSON.stringify(company)], !!company);
+  const res = useAsync((signal) => api.post<Profile>('/api/analysis/profile', company, { signal }), [JSON.stringify(company)], !!company);
   const p = company ? res.data : null;
   const units = (data?.units as UnitScale | undefined) ?? settings.units;
   const last = (p?.periods.length ?? 1) - 1;

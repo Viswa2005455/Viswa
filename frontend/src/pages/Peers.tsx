@@ -72,8 +72,8 @@ export function Peers() {
       });
     return list.length >= 2 ? { companies: list } : null;
   }, [useExample, picked, loaded, sources]);
-  const req = useDebounced(body, 300);
-  const res = useAsync(() => api.post<Report>('/api/analysis/peers', req), [JSON.stringify(req)], !!req);
+  const req = useDebounced(body, 150);
+  const res = useAsync((signal) => api.post<Report>('/api/analysis/peers', req, { signal }), [JSON.stringify(req)], !!req);
   const r = req ? res.data : null;
 
   const groups = useMemo(() => {

@@ -39,7 +39,7 @@ export function Variance() {
   const [materiality, setMateriality] = useState<number | null>(10);
   const [importNote, setImportNote] = useState<string | null>(null);
 
-  const uploads = useAsync(() => api.get<{ uploads: UploadSummary[] }>('/api/uploads'), []);
+  const uploads = useAsync((signal) => api.get<{ uploads: UploadSummary[] }>('/api/uploads', { signal }), []);
   const candidates = uploads.data?.uploads.filter((u) => u.recommendations.some((r) => r.module === 'Variance Analysis')) ?? [];
 
   const importFrom = async (id: string) => {
@@ -67,8 +67,8 @@ export function Variance() {
 
   const incomplete = lines.some((l) => !l.name.trim() || l.budget === null || l.actual === null);
   const body = useMemo(() => (incomplete || !lines.length ? null : { lines, materiality_pct: materiality }), [lines, materiality, incomplete]);
-  const req = useDebounced(body, 250);
-  const res = useAsync(() => api.post<VarRes>('/api/finance/variance', req), [JSON.stringify(req)], !!req);
+  const req = useDebounced(body, 150);
+  const res = useAsync((signal) => api.post<VarRes>('/api/finance/variance', req, { signal }), [JSON.stringify(req)], !!req);
   const r = res.data;
 
   const edit = (i: number, p: Partial<Line>) => { setIsExample(false); setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...p } : l))); };
@@ -238,8 +238,8 @@ function PriceVolume() {
   const [ap, setAp] = useState<number | null>(530);
   const [aq, setAq] = useState<number | null>(2387);
   const ok = [bp, bq, ap, aq].every(isNum);
-  const req = useDebounced(ok ? { budget_price: bp, budget_quantity: bq, actual_price: ap, actual_quantity: aq } : null, 250);
-  const res = useAsync(() => api.post<Record<string, number>>('/api/finance/variance/price-volume', req), [JSON.stringify(req)], !!req);
+  const req = useDebounced(ok ? { budget_price: bp, budget_quantity: bq, actual_price: ap, actual_quantity: aq } : null, 150);
+  const res = useAsync((signal) => api.post<Record<string, number>>('/api/finance/variance/price-volume', req, { signal }), [JSON.stringify(req)], !!req);
   const r = res.data;
   const cur = settings.currency;
   return (

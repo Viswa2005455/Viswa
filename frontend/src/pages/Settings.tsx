@@ -13,8 +13,8 @@ import { useAsync } from '../lib/useApi';
 
 export function SettingsPage() {
   const { settings, update } = useSettings();
-  const ai = useAsync(() => api.get<{ configured: boolean; provider: string; message: string }>('/api/ai/status'), []);
-  const health = useAsync(() => api.get<{ version: string; environment: string }>('/api/health'), []);
+  const ai = useAsync((signal) => api.get<{ configured: boolean; provider: string; message: string }>('/api/ai/status', { signal }), []);
+  const health = useAsync((signal) => api.get<{ version: string; environment: string }>('/api/health', { signal }), []);
   const { user } = useAuth();
 
   return (
@@ -119,7 +119,7 @@ function describeAgent(ua: string | null) {
 function SessionsCard() {
   const toast = useToast();
   const { logout } = useAuth();
-  const s = useAsync(() => api.get<{ sessions: SessionRow[] }>('/api/auth/sessions'), []);
+  const s = useAsync((signal) => api.get<{ sessions: SessionRow[] }>('/api/auth/sessions', { signal }), []);
   const others = (s.data?.sessions ?? []).filter((x) => !x.current).length;
   return (
     <Card title="Signed-in devices" actions={<MonitorSmartphone size={17} className="faint" />}>

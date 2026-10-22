@@ -41,8 +41,8 @@ export function UploadPage() {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
   const selected = params.get('file');
-  const list = useAsync(() => api.get<{ uploads: UploadSummary[]; }>(`/api/uploads${activeId ? `?project_id=${activeId}` : ''}`), [activeId]);
-  const formats = useAsync(() => api.get<{ max_upload_mb: number; max_files_per_request: number }>('/api/uploads/formats'), []);
+  const list = useAsync((signal) => api.get<{ uploads: UploadSummary[]; }>(`/api/uploads${activeId ? `?project_id=${activeId}` : ''}`, { signal }), [activeId]);
+  const formats = useAsync((signal) => api.get<{ max_upload_mb: number; max_files_per_request: number }>('/api/uploads/formats', { signal }), []);
   const [pending, setPending] = useState<Pending[]>([]);
   const [over, setOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -170,7 +170,7 @@ export function UploadPage() {
 function FileDetail({ id, onDeleted, onReplace, onMoved }: { id: string; onDeleted: () => void; onReplace: (f: File) => void; onMoved: () => void }) {
   const toast = useToast();
   const { projects, reload: reloadProjects } = useProjects();
-  const rec = useAsync(() => api.get<UploadRecord>(`/api/uploads/${id}`), [id]);
+  const rec = useAsync((signal) => api.get<UploadRecord>(`/api/uploads/${id}`, { signal }), [id]);
   const [tab, setTab] = useState<'preview' | 'details'>('preview');
   const replaceRef = useRef<HTMLInputElement>(null);
   useEffect(() => setTab('preview'), [id]);

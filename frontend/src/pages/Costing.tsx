@@ -77,8 +77,8 @@ function VarianceTable({ res }: { res: VarRes }) {
 }
 
 function useCalc<T>(path: string, body: unknown) {
-  const req = useDebounced(body, 300);
-  return useAsync(() => api.post<T>(path, req), [JSON.stringify(req)], !!req);
+  const req = useDebounced(body, 150);
+  return useAsync((signal) => api.post<T>(path, req, { signal }), [JSON.stringify(req)], !!req);
 }
 
 function Fields<T extends Record<string, N | string>>({ obj, labels, onChange, cols = 3 }: { obj: T; labels: Record<string, string>; onChange: (o: T) => void; cols?: number }) {

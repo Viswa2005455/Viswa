@@ -144,7 +144,7 @@ export function Tabs<T extends string>({ value, onChange, options, label }: { va
   );
 }
 
-export function Badge({ children, tone }: { children: ReactNode; tone?: 'accent' | 'warn' | 'neg' | 'info' | 'sample' }) {
+export function Badge({ children, tone }: { children: ReactNode; tone?: 'accent' | 'pos' | 'warn' | 'neg' | 'info' | 'sample' }) {
   return <span className={`badge ${tone ?? ''}`}>{children}</span>;
 }
 

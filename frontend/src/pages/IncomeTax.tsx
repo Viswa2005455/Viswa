@@ -61,8 +61,8 @@ function Check({ label, checked, onChange }: { label: ReactNode; checked: boolea
   return <label className="row" style={{ gap: 8, fontSize: 13 }}><input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />{label}</label>;
 }
 function useCalc<T>(path: string, body: unknown) {
-  const req = useDebounced(body, 300);
-  return useAsync(() => api.post<T>(path, req), [JSON.stringify(req)], !!req);
+  const req = useDebounced(body, 150);
+  return useAsync((signal) => api.post<T>(path, req, { signal }), [JSON.stringify(req)], !!req);
 }
 // Saved computations from older versions lack newer fields; fill them from the defaults.
 const withDefaults = (s: { m: Partial<Model>; example: boolean }) => ({ ...s, m: {
@@ -76,7 +76,7 @@ export function IncomeTax() {
   const [state, setState] = useState<{ m: Model; example: boolean }>(() => withDefaults(loadRaw('fis.itax', { m: EXAMPLE, example: true })));
   const m = state.m;
   const set = (p: Partial<Model>) => { const s = { m: { ...m, ...p }, example: false }; setState(s); save('fis.itax', s); };
-  const info = useAsync(() => api.get<Info>('/api/tax/info'), []);
+  const info = useAsync((signal) => api.get<Info>('/api/tax/info', { signal }), []);
   return (
     <div className="page">
       <PageHeader title="Income Tax" badge={state.example ? <Badge tone="sample">Example figures</Badge> : <Badge tone="accent">Your figures</Badge>}

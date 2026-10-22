@@ -25,7 +25,7 @@ const RATING_TONE: Record<string, 'accent' | 'info' | 'warn' | 'neg'> = { Low: '
 const FIT: Record<string, ['success' | 'warn' | 'error', string]> = { fits: ['success', 'Fits your risk profile'], borderline: ['warn', 'Borderline for your profile'], does_not_fit: ['error', 'Does not fit your profile'] };
 
 export function Markets() {
-  const status = useAsync(() => api.get<Status>('/api/market/status'), []);
+  const status = useAsync((signal) => api.get<Status>('/api/market/status', { signal }), []);
   const [params, setParams] = useState(() => loadRaw('fis.market', { symbol: 'RELIANCE.NSE', benchmark: 'NSEI.INDX', years: 5, profile: 'balanced' as Profile, horizon: 5 as number | null, rf: 0.065 as number | null }));
   const upd = (p: Partial<typeof params>) => { const s = { ...params, ...p }; setParams(s); save('fis.market', s); };
   const [risk, setRisk] = useState<Risk | null>(null);
@@ -171,12 +171,11 @@ function RiskView({ r }: { r: Risk }) {
           <div className="chart tall">
             <ResponsiveContainer>
               <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                <defs><linearGradient id="px" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor={C.c1} stopOpacity={0.3} /><stop offset="1" stopColor={C.c1} stopOpacity={0} /></linearGradient></defs>
                 <CartesianGrid {...gridProps} />
                 <XAxis dataKey="d" {...axisProps} minTickGap={40} tickFormatter={(d: string) => d.slice(0, 7)} />
                 <YAxis {...axisProps} width={60} domain={['auto', 'auto']} tickFormatter={(v: number) => fmtNum(v, 0)} />
                 <Tooltip content={<ChartTooltip format={(v) => fmtNum(v, 2)} />} />
-                <Area type="monotone" dataKey="p" name="Close" stroke={C.c1} strokeWidth={2} fill="url(#px)" dot={false} isAnimationActive={false} />
+                <Area type="monotone" dataKey="p" name="Close" stroke={C.c1} strokeWidth={2} fill={C.c1} fillOpacity={0.08} dot={false} isAnimationActive={false} />
               </AreaChart>
             </ResponsiveContainer>
           </div>

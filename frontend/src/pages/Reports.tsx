@@ -31,7 +31,7 @@ export function Reports() {
   const { settings } = useSettings();
   const { sources } = useCompanySources();
   const { model: dcf, isExample: dcfExample } = useDCFModel();
-  const ai = useAsync(() => api.get<{ configured: boolean }>('/api/ai/status'), []);
+  const ai = useAsync((signal) => api.get<{ configured: boolean }>('/api/ai/status', { signal }), []);
   const real = (sources ?? []).filter((s) => !s.isExample);
   const [id, setId] = useState<string>(() => loadRaw('fis.dashboard.company', ''));
   const src = real.find((s) => s.id === id) ?? real[0];
@@ -45,9 +45,9 @@ export function Reports() {
 
   useEffect(() => { if (src) { setData(null); src.load().then(setData).catch(() => setData(null)); } }, [src]);
   const company = useMemo(() => (data ? toCompany(data) : null), [data]);
-  const prof = useAsync(() => api.post<Profile>('/api/analysis/profile', company), [JSON.stringify(company)], !!company);
+  const prof = useAsync((signal) => api.post<Profile>('/api/analysis/profile', company, { signal }), [JSON.stringify(company)], !!company);
   const useDcf = sections.includes('valuation') && !dcfExample;
-  const dcfRes = useAsync(() => api.post<DCFOut>('/api/finance/dcf', dcf), [JSON.stringify(dcf), useDcf], useDcf);
+  const dcfRes = useAsync((signal) => api.post<DCFOut>('/api/finance/dcf', dcf, { signal }), [JSON.stringify(dcf), useDcf], useDcf);
   const units = (data?.units as UnitScale | undefined) ?? settings.units;
   const name = data?.company || src?.name || 'Company';
 

@@ -28,6 +28,7 @@ const CashFlow = lazy(() => import('./pages/CashFlow').then((m) => ({ default: m
 const Projects = lazy(() => import('./pages/Projects').then((m) => ({ default: m.Projects })));
 const RedFlags = lazy(() => import('./pages/RedFlags').then((m) => ({ default: m.RedFlags })));
 const ModelCheck = lazy(() => import('./pages/ModelCheck').then((m) => ({ default: m.ModelCheck })));
+const AIHealth = lazy(() => import('./pages/AIHealth').then((m) => ({ default: m.AIHealth })));
 const Peers = lazy(() => import('./pages/Peers').then((m) => ({ default: m.Peers })));
 const Assistant = lazy(() => import('./pages/Assistant').then((m) => ({ default: m.Assistant })));
 const Costing = lazy(() => import('./pages/Costing').then((m) => ({ default: m.Costing })));
@@ -86,6 +87,7 @@ function Gate() {
                 <Route path="investment" element={<Investment />} />
                 <Route path="code-lab" element={<CodeLab />} />
                 <Route path="assistant" element={<Assistant />} />
+                <Route path="ai-health" element={<AIHealth />} />
                 <Route path="reports" element={<Reports />} />
                 <Route path="learn" element={<Learning />} />
                 <Route path="settings" element={<SettingsPage />} />

@@ -23,7 +23,7 @@ const SEV_TONE = { high: 'neg', medium: 'warn', low: 'info' } as const;
 type Filter = 'all' | 'high' | 'medium' | 'low';
 
 export function ModelCheck() {
-  const uploads = useAsync(() => api.get<{ uploads: UploadSummary[] }>('/api/uploads'), []);
+  const uploads = useAsync((signal) => api.get<{ uploads: UploadSummary[] }>('/api/uploads', { signal }), []);
   const excel = (uploads.data?.uploads ?? []).filter((u) => /\.(xlsx|xlsm)$/i.test(u.name) && u.status === 'processed');
   const [report, setReport] = useState<Report | null>(null);
   const [busy, setBusy] = useState<string | null>(null);

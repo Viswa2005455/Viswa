@@ -34,8 +34,8 @@ export function Investment() {
   const body = useMemo(() => missing ? null : {
     cash_flows: [-(initial as number), ...(flows as number[])], discount_rate: rate, finance_rate: finRate, reinvest_rate: reRate,
   }, [initial, flows, rate, finRate, reRate, missing]);
-  const req = useDebounced(body, 250);
-  const res = useAsync(() => api.post<Appraisal>('/api/finance/appraisal', req), [JSON.stringify(req)], !!req);
+  const req = useDebounced(body, 150);
+  const res = useAsync((signal) => api.post<Appraisal>('/api/finance/appraisal', req, { signal }), [JSON.stringify(req)], !!req);
   const r = res.data;
 
   const edit = <T,>(setter: (v: T) => void) => (v: T) => { setIsExample(false); setter(v); };
