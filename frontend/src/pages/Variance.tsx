@@ -135,7 +135,7 @@ export function Variance() {
       )}
 
       <Card title="Budget lines" subtitle="Type decides direction: revenue above budget is favourable; expense above budget is adverse." flush>
-        <div className="table-wrap" style={{ border: 0, borderRadius: 0 }}>
+        <div className="table-wrap" tabIndex={0} style={{ border: 0, borderRadius: 0 }}>
           <table className="data">
             <thead><tr><th>Line item</th><th>Type</th><th className="r">Budget</th><th className="r">Actual</th><th className="r">Variance</th><th className="r">Variance %</th><th>Status</th><th /></tr></thead>
             <tbody>

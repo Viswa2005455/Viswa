@@ -184,7 +184,9 @@ def portfolio_stats(weights: list[float], returns: list[float], vols: list[float
         out["frontier"] = frontier
         if w_min is not None:
             wm = np.array([w_min, 1 - w_min])
-            out["min_variance"] = {"w1": w_min, "return": float(wm @ mu), "std_dev": math.sqrt(max(float(wm @ cov @ wm), 0.0))}
+            out["min_variance"] = {"w1": w_min, "return": float(wm @ mu), "std_dev": math.sqrt(max(float(wm @ cov @ wm), 0.0)),
+                                   "note": "Weights can fall outside 0–100% (short selling); the frontier shown is long-only."
+                                   if not 0 <= w_min <= 1 else "Long-only weights."}
     return out
 
 
@@ -205,17 +207,23 @@ def performance(portfolio: list[float], benchmark: list[float], risk_free: float
     out = {"annual_return": rp, "benchmark_return": rb, "volatility": sp, "benchmark_volatility": sb, "beta": beta,
            "sharpe": sharpe, "treynor": (rp - risk_free) / beta if beta else None,
            "jensens_alpha": rp - (risk_free + beta * (rb - risk_free)) if beta is not None else None,
-           "m_squared": (sharpe * sb + risk_free - rb) if sharpe is not None else None,
+           # Modigliani M²: the portfolio's return scaled to the benchmark's volatility; the excess over the
+           # benchmark return is reported separately.
+           "m_squared": (risk_free + sharpe * sb) if sharpe is not None else None,
+           "m_squared_excess": (risk_free + sharpe * sb - rb) if sharpe is not None else None,
            "tracking_error": te, "information_ratio": (rp - rb) / te if te > 0 else None,
            "sortino": (rp - risk_free) / dd if dd > 0 else None,
            "max_drawdown": _max_drawdown(p),
            "notes": [f"Annualised arithmetically from {len(p)} periods ({k} per year).",
+                     "Sortino downside deviation divides by all periods (n), counting only returns below the risk-free rate.",
+                     "Maximum drawdown starts from the value before the first return.",
                      "Jensen's alpha and Treynor use beta against the benchmark given."]}
     return out
 
 
 def _max_drawdown(r: np.ndarray) -> float:
-    wealth = np.cumprod(1 + r)
+    # Wealth starts at 1.0 before the first return, so a loss in the very first period counts.
+    wealth = np.concatenate(([1.0], np.cumprod(1 + r)))
     peak = np.maximum.accumulate(wealth)
     return float(((wealth - peak) / peak).min())
 
@@ -249,6 +257,8 @@ def binomial(s: float, k: float, t: float, r: float, sigma: float, steps: int = 
              kind: str = "put", american: bool = True) -> dict:
     if steps < 1 or steps > 2000:
         raise FinanceInputError("Steps must be between 1 and 2,000.")
+    if kind not in ("call", "put"):
+        raise FinanceInputError("Option kind must be 'call' or 'put'.")
     if s <= 0 or k <= 0 or t <= 0 or sigma <= 0:
         raise FinanceInputError("Spot, strike, time and volatility must be positive.")
     dt = t / steps

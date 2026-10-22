@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from . import FinanceInputError
-from .dcf import OUTPUTS, SENSITIVITY_VARIABLES, DCFInputs, get_variable, run_dcf, set_variable
+from .dcf import OUTPUTS, SENSITIVITY_VARIABLES, DCFInputs, check_variable, get_variable, run_dcf, set_variable
 
 
 REVERSE_RANGES = {
@@ -69,17 +69,24 @@ def reverse_dcf(base: DCFInputs, target: float, variable: str = "revenue_growth"
 
     xs = np.linspace(lo, hi, 121)
     ys = [_out(set_variable(base, variable, float(x)), output) for x in xs]
-    # Find the first sign change of (value - target) and refine it by bisection.
-    implied = None
+    # Every sign change of (value - target) is a solution; the first is refined by bisection and any
+    # others are reported, because a non-monotonic model can match the price more than once.
+    brackets = []
     for i in range(len(xs) - 1):
         a, b = ys[i], ys[i + 1]
         if a is None or b is None:
             continue
-        fa, fb = a - target, b - target
-        if fa == 0:
+        if a == target or (a - target) * (b - target) < 0:
+            brackets.append(i)
+    if ys[-1] is not None and ys[-1] == target:
+        brackets.append(len(xs) - 1)
+    implied = None
+    if brackets:
+        i = brackets[0]
+        fa = ys[i] - target
+        if fa == 0 or i == len(xs) - 1:
             implied = float(xs[i])
-            break
-        if fa * fb < 0:
+        else:
             x0, x1, f0 = float(xs[i]), float(xs[i + 1]), fa
             for _ in range(100):
                 mid = (x0 + x1) / 2
@@ -94,11 +101,14 @@ def reverse_dcf(base: DCFInputs, target: float, variable: str = "revenue_growth"
                 else:
                     x0, f0 = mid, fm
             implied = (x0 + x1) / 2
-            break
     label = SENSITIVITY_VARIABLES[variable]
     notes = ["All other assumptions are kept exactly as entered."]
     if variable in ("revenue_growth", "ebit_margin"):
-        notes.append(f"The solved {label.lower()} is applied to every forecast year.")
+        notes.append("Every forecast year is shifted by the same amount, keeping your year-by-year profile; the value shown is "
+                     "the average across the years.")
+    if len(brackets) > 1:
+        others = ", ".join(f"{xs[i]:.2f}×" if variable == "exit_multiple" else f"{xs[i]:.1%}" for i in brackets[1:4])
+        notes.append(f"The model reaches the same value at more than one point (also near {others}); the lowest is shown.")
     if implied is None:
         msg = (f"No {label.lower()} between {lo:.1%} and {hi:.1%} gives that value. The market price may need other "
                "assumptions to change too (e.g. margins or WACC).") if variable != "exit_multiple" else \
@@ -106,9 +116,10 @@ def reverse_dcf(base: DCFInputs, target: float, variable: str = "revenue_growth"
     else:
         shown = f"{implied:.2f}×" if variable == "exit_multiple" else f"{implied:.2%}"
         base_shown = f"{base_value:.2f}×" if variable == "exit_multiple" else f"{base_value:.2%}"
-        direction = "more optimistic than" if implied > base_value else "less optimistic than" if implied < base_value else "the same as"
-        if variable == "wacc":
-            direction = "a lower required return than" if implied < base_value else "a higher required return than" if implied > base_value else "the same as"
+        same = abs(implied - base_value) <= 1e-6 * max(1.0, abs(base_value)) or abs(base_output - target) <= 1e-9 * max(1.0, abs(target))
+        direction = "the same as" if same else "more optimistic than" if implied > base_value else "less optimistic than"
+        if variable == "wacc" and not same:
+            direction = "a lower required return than" if implied < base_value else "a higher required return than"
         msg = f"The market price implies {label.lower()} of {shown}, which is {direction} your assumption of {base_shown}."
     curve = [{"x": float(x), "value": y} for x, y in zip(xs[::4], ys[::4])]
     return ReverseResult(variable, label, output, target, implied, base_value, base_output, curve, msg, notes)
@@ -148,6 +159,8 @@ class MonteCarloResult:
 def _validate(d: Distribution):
     if d.variable not in SENSITIVITY_VARIABLES:
         raise FinanceInputError(f"Unknown variable '{d.variable}'.")
+    if d.clip_low is not None and d.clip_high is not None and d.clip_low > d.clip_high:
+        raise FinanceInputError(f"{SENSITIVITY_VARIABLES[d.variable]}: the lower limit is above the upper limit.")
     if d.kind == "normal":
         if d.b <= 0:
             raise FinanceInputError(f"{SENSITIVITY_VARIABLES[d.variable]}: standard deviation must be positive.")
@@ -187,6 +200,7 @@ def monte_carlo(base: DCFInputs, dists: list[Distribution], output: str = "value
         raise FinanceInputError("Simulations must be between 100 and 20,000.")
     for d in dists:
         _validate(d)
+        check_variable(base, d.variable)
     run_dcf(base)  # the base case itself must be valid
     rng = np.random.default_rng(seed)
     draws = {d.variable: _draw(rng, d, n) for d in dists}
@@ -206,7 +220,8 @@ def monte_carlo(base: DCFInputs, dists: list[Distribution], output: str = "value
              f"Random seed {seed}: the same inputs always give the same result."]
     if invalid:
         notes.append(f"{invalid} of {n} draws were excluded because the model was invalid for them "
-                     "(for example WACC at or below terminal growth).")
+                     "(for example WACC at or below terminal growth). The results are therefore conditional on a valid "
+                     "model: excluded draws are usually the extreme tail, so the true spread is wider than shown.")
     arr = np.array(values)
     pct = {f"p{p}": float(np.percentile(arr, p)) for p in (5, 10, 25, 50, 75, 90, 95)} if len(arr) else {}
     hist = []

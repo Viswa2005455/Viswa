@@ -105,7 +105,9 @@ def ses(y: np.ndarray, h: int, alpha: float | None, conf: float) -> Forecast:
     lower: list[float | None] = [None] * h
     upper: list[float | None] = [None] * h
     if len(resid) >= 3:
-        sigma = float(np.std(resid, ddof=1))
+        # One-step forecast errors are not centred on their mean: a biased forecast (e.g. a trend the
+        # flat SES level keeps missing) must widen the interval, so sigma = sqrt(SSE / n).
+        sigma = float(math.sqrt(np.mean(resid ** 2)))
         z = stats.norm.ppf(0.5 + conf / 2)
         # Variance of the h-step SES forecast grows as 1 + (h-1) alpha^2 (ETS(A,N,N)).
         half = [z * sigma * math.sqrt(1 + (k - 1) * alpha ** 2) for k in range(1, h + 1)]
@@ -141,8 +143,9 @@ def error_metrics(actual: list[float], predicted: list[float]) -> dict[str, floa
     err = a - p
     mae = float(np.mean(np.abs(err)))
     rmse = float(math.sqrt(np.mean(err ** 2)))
-    # MAPE is undefined when any actual is zero.
-    mape = None if np.any(a == 0) else float(np.mean(np.abs(err / a)) * 100)
+    # Percentage error is undefined where the actual is zero, so those periods are left out of MAPE.
+    nz = a != 0
+    mape = float(np.mean(np.abs(err[nz] / a[nz])) * 100) if np.any(nz) else None
     return {"mae": mae, "rmse": rmse, "mape": mape}
 
 
@@ -164,8 +167,15 @@ def forecast(series: list[float], method: Method, horizon: int, *, confidence: f
     backtest: dict[str, float | None] = {"holdout": holdout, "mae": None, "rmse": None, "mape": None}
     if len(y) - holdout >= min_len:
         train = y[:-holdout]
-        bt = _run(method, train, holdout, confidence, window, alpha)
-        backtest.update(error_metrics(list(y[-holdout:]), bt.point))
+        try:
+            bt = _run(method, train, holdout, confidence, window, alpha)
+        except FinanceInputError as e:  # the forecast itself is still valid; only accuracy is unknown
+            notes.append(f"Backtest could not run on the training window ({e}); accuracy could not be measured.")
+        else:
+            backtest.update(error_metrics(list(y[-holdout:]), bt.point))
+            zeros = int(np.sum(y[-holdout:] == 0))
+            if zeros:
+                notes.append(f"MAPE leaves out {zeros} holdout period(s) where the actual value is zero.")
     else:
         notes.append("Not enough history for a holdout backtest; accuracy could not be measured.")
 

@@ -11,8 +11,11 @@ says so.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Callable
+
+from . import FinanceInputError
 
 # Statement items understood by the engine (all in the same currency and units).
 ITEMS = {
@@ -120,6 +123,15 @@ def _div(n: float | None, d: float | None, label_n: str, label_d: str, scale: fl
 
 
 def compute_ratios(data: dict[str, float | None], period_days: int = 365) -> list[RatioResult]:
+    for k, v in data.items():
+        if v is not None and not math.isfinite(v):
+            raise FinanceInputError(f"{ITEMS.get(k.removesuffix('_prior'), k)}: value is not a finite number.")
+    t = data.get("tax_rate")
+    if t is not None and not 0 <= t < 1:
+        raise FinanceInputError("Tax rate must be a decimal between 0 and 1 (enter 0.25 for 25%).")
+    sh = data.get("shares_outstanding")
+    if sh is not None and sh <= 0:
+        raise FinanceInputError("Shares outstanding must be a positive number.")
     days = period_days
     R: list[RatioResult] = []
 
@@ -186,8 +198,9 @@ def compute_ratios(data: dict[str, float | None], period_days: int = 365) -> lis
         ni, eq = c.get("net_income"), c.get("total_equity", True)
         if None in (ni, eq):
             return None
-        if eq <= 0:
-            return None, "Equity is zero or negative, so ROE is not meaningful."
+        closing = data.get("total_equity")
+        if eq <= 0 or (closing is not None and closing <= 0):
+            return None, "Equity is zero or negative (average or closing), so ROE is not meaningful."
         return _div(ni, eq, "Net income", "Avg equity", 100)
     add("roe", "Return on equity", "Profitability", "Net income / Average shareholders' equity x 100", "%",
         lambda v: "Return generated for shareholders (boosted by leverage)", roe)
@@ -257,9 +270,16 @@ def compute_ratios(data: dict[str, float | None], period_days: int = 365) -> lis
     add("debt_to_assets", "Debt-to-assets", "Leverage", "Total debt / Total assets", "x",
         lambda v: f"{v:.0%} of assets are financed with debt",
         lambda c: _div(c.get("total_debt"), c.get("total_assets"), "Total debt", "Total assets"))
+    def interest_cover(c: _Ctx):
+        ebit, i = c.get("operating_income"), c.get("interest_expense")
+        if None in (ebit, i):
+            return None
+        if i < 0:
+            return None, "Interest expense is negative; enter it as a positive amount (a cost)."
+        return _div(ebit, i, "EBIT", "Interest expense")
     add("interest_coverage", "Interest coverage", "Leverage", "EBIT / Interest expense", "x",
         lambda v: "Comfortable" if v >= 5 else "Adequate" if v >= 2 else "Weak: earnings barely cover interest",
-        lambda c: _div(c.get("operating_income"), c.get("interest_expense"), "EBIT", "Interest expense"))
+        interest_cover)
 
     def dscr(c: _Ctx):
         ebit, da, ds = c.get("operating_income"), c.get("depreciation_amortization"), c.get("debt_service")

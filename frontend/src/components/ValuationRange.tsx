@@ -122,7 +122,7 @@ export function MonteCarlo({ model, price }: { model: DCFModel; price: number | 
   return (
     <Card title="Valuation range (Monte Carlo)" subtitle="Runs the DCF thousands of times with uncertain assumptions, so you see a range of values instead of one number"
       actions={<button className="btn primary" onClick={run} disabled={busy}><Play size={15} />{busy ? 'Running…' : 'Run simulation'}</button>}>
-      <div className="table-wrap">
+      <div className="table-wrap" tabIndex={0}>
         <table className="data">
           <thead><tr><th>Uncertain?</th><th>Assumption</th><th>Distribution</th><th>Parameters</th></tr></thead>
           <tbody>{rows.map((x, i) => {

@@ -62,7 +62,7 @@ Cash released = (Receivables now − target) + (Inventory now − target) + (Pay
 function LinesEditor({ title, lines, periods, onChange }: { title: string; lines: CashLine[]; periods: string[]; onChange: (l: CashLine[]) => void }) {
   return (
     <Card title={title} flush actions={<button className="btn sm" onClick={() => onChange([...lines, { name: 'New line', values: Array(periods.length).fill(0) }])}><Plus size={14} />Line</button>}>
-      <div className="table-wrap" style={{ border: 0, borderRadius: 0 }}>
+      <div className="table-wrap" tabIndex={0} style={{ border: 0, borderRadius: 0 }}>
         <table className="data">
           <thead><tr><th>Line</th>{periods.map((p) => <th key={p} className="r">{p}</th>)}<th className="r">Total</th><th /></tr></thead>
           <tbody>
@@ -170,7 +170,7 @@ function CashBudget() {
       )}
       {r && (
         <Card title="Cash budget" flush>
-          <div className="table-wrap" style={{ border: 0, borderRadius: 0 }}>
+          <div className="table-wrap" tabIndex={0} style={{ border: 0, borderRadius: 0 }}>
             <table className="data">
               <thead><tr><th />{r.periods.map((p) => <th key={p.period} className="r">{p.period}</th>)}</tr></thead>
               <tbody>

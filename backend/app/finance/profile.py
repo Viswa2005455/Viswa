@@ -54,6 +54,10 @@ class Profile:
     derived: list[str] = field(default_factory=list)
 
 
+def _pos(v: Num) -> Num:
+    return v if _ok(v) and v > 0 else None
+
+
 def _div(a: Num, b: Num) -> Num:
     return a / b if _ok(a) and _ok(b) and b != 0 else None
 
@@ -89,8 +93,9 @@ def build(periods: list[str], items: dict[str, list[Num]]) -> Profile:
             "profit_growth": (ni / g("net_income", p) - 1) if _ok(ni) and _ok(g("net_income", p)) and g("net_income", p) > 0 else None,
             "ebitda_margin": _div(ebitda, rev), "operating_margin": _div(ebit, rev), "net_margin": _div(ni, rev),
             "employee_cost_pct": _div(g("employee_cost", t), rev),
-            "roe": _div(ni, _avg(eq, g("total_equity", p))),
-            "roce": _div(ebit, _avg(ce(t), ce(p)) if p >= 0 else None),
+            # Returns on capital are not meaningful when the capital base is zero or negative.
+            "roe": _div(ni, _pos(_avg(eq, g("total_equity", p)))) if _ok(eq) and eq > 0 else None,
+            "roce": _div(ebit, _pos(_avg(ce(t), ce(p))) if p >= 0 else None),
             "roa": _div(ni, _avg(g("total_assets", t), g("total_assets", p))),
             "asset_turnover": _div(rev, _avg(g("total_assets", t), g("total_assets", p))),
             "receivable_days": (_div(g("receivables", t), rev) * 365) if _ok(_div(g("receivables", t), rev)) else None,

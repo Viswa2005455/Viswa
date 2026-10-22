@@ -20,7 +20,7 @@ interface Regime {
   slab_tax: number; special_rate_tax: Record<string, SpecialRow>; rebate_87a: number; tax_after_rebate: number; surcharge_rate: number; surcharge: number;
   marginal_relief: number; cess: number; total_tax: number; tds_and_advance_tax: number; balance: number; effective_rate: number | null; notes: string[];
 }
-interface IndRes { new: Regime; old: Regime; better_regime: 'new' | 'old'; saving: number; rebate_note: string; notes: string[]; sources: Record<string, string> }
+interface IndRes { new: Regime; old: Regime; better_regime: 'new' | 'old'; saving: number; rebate_note: string; notes: string[]; sources: Record<string, string>; ruleset?: { id: string; version: string } }
 interface EntOpt { code: string; label: string; tax: number; surcharge_rate: number; surcharge: number; marginal_relief: number; cess: number; total_tax: number; effective_rate: number | null; mat_credit?: number }
 interface EntRes { options: EntOpt[]; lowest: string; notes: string[]; source: string }
 interface DueRes {
@@ -28,19 +28,20 @@ interface DueRes {
   updated_return: string; notes: string[]; sources: Record<string, string>;
   late_filing?: { due_date: string; late: boolean; fee_234f: number; interest_234a: number; interest_months: number; allowed: boolean; message: string };
 }
-interface Info { year: { financial_year: string; assessment_year: string; law: string }; sources: Record<string, string>; filing_steps: string[]; filing_note: string }
+interface Ruleset { id: string; version: string; rules_checked_on: string; status: string }
+interface Info { year: { financial_year: string; assessment_year: string; law: string }; ruleset: Ruleset; sources: Record<string, string>; filing_steps: string[]; filing_note: string }
 
 const PROFILE = {
   taxpayer_type: 'individual', residential_status: 'resident', total_income: 900000 as N, salary_or_pension: true, house_properties: 1 as N,
   business_income: false, presumptive: 'none', partner_remuneration: false, stcg: false, ltcg_112a: 0 as N, other_capital_gains: false,
   agricultural_income: 0 as N, director: false, unlisted_equity: false, foreign_assets_or_income: false, tds_194n: false, esop_tax_deferred: false,
-  losses_to_carry_forward: false, files_under_139_4a_to_4d: false, claims_section_11: false,
+  losses_to_carry_forward: false, files_under_139_4a_to_4d: false, claims_section_11: false, accounts_audited: false,
 };
 const INCOME = {
-  taxpayer_type: 'individual', age: 'below_60', resident: true, salary: 1500000 as N, house_property: 0 as N, business: 0 as N, other_sources: 50000 as N,
+  taxpayer_type: 'individual', age: 'below_60', resident: true, salary: 1500000 as N, house_property: 0 as N, business: 0 as N, other_sources: 50000 as N, dividends: 0 as N,
   stcg_111a: 0 as N, ltcg_112a: 0 as N, ltcg_112: 0 as N, winnings_115bb: 0 as N, employer_nps_80ccd2: 0 as N, tds_and_advance_tax: 0 as N,
   count_special_income_for_rebate: true,
-  deductions_old: { '80C': 150000 as N, '80CCD(1B)': 0 as N, '80D': 25000 as N, '80TTA': 10000 as N, '80TTB': 0 as N, '80G': 0 as N, other: 0 as N } as Record<string, N>,
+  deductions_old: { '80C': 150000 as N, '80CCC': 0 as N, '80CCD(1)': 0 as N, '80CCD(1B)': 0 as N, '80D': 25000 as N, '80TTA': 10000 as N, '80TTB': 0 as N, '80G': 0 as N, other: 0 as N } as Record<string, N>,
 };
 const ENTITY = { entity: 'company', total_income: 50000000 as N, turnover_fy_2023_24: 1500000000 as N, book_profit: null as N, total_income_115baa: null as N,
   manufacturing_115bab_eligible: false, adjusted_total_income_amt: null as N };
@@ -63,11 +64,16 @@ function useCalc<T>(path: string, body: unknown) {
   const req = useDebounced(body, 300);
   return useAsync(() => api.post<T>(path, req), [JSON.stringify(req)], !!req);
 }
+// Saved computations from older versions lack newer fields; fill them from the defaults.
+const withDefaults = (s: { m: Partial<Model>; example: boolean }) => ({ ...s, m: {
+  profile: { ...PROFILE, ...s.m.profile }, entity: { ...ENTITY, ...s.m.entity },
+  income: { ...INCOME, ...s.m.income, deductions_old: { ...INCOME.deductions_old, ...s.m.income?.deductions_old } },
+} });
 const numbersOnly = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v === null ? 0 : v]));
 
 export function IncomeTax() {
   const [tab, setTab] = useState<Tab>(() => loadRaw('fis.itax.tab', 'form'));
-  const [state, setState] = useState<{ m: Model; example: boolean }>(() => loadRaw('fis.itax', { m: EXAMPLE, example: true }));
+  const [state, setState] = useState<{ m: Model; example: boolean }>(() => withDefaults(loadRaw('fis.itax', { m: EXAMPLE, example: true })));
   const m = state.m;
   const set = (p: Partial<Model>) => { const s = { m: { ...m, ...p }, example: false }; setState(s); save('fis.itax', s); };
   const info = useAsync(() => api.get<Info>('/api/tax/info'), []);
@@ -76,13 +82,14 @@ export function IncomeTax() {
       <PageHeader title="Income Tax" badge={state.example ? <Badge tone="sample">Example figures</Badge> : <Badge tone="accent">Your figures</Badge>}
         subtitle={<>Which ITR form to file, old vs new regime, firm and company tax, due dates and late fees for <b>FY 2025-26 (AY 2026-27)</b> under the Income-tax Act, 1961 — each rule linked to the official page it comes from.</>}
         actions={<>
-          <SaveLoad kind="income_tax" label="tax computation" getData={() => m} onLoad={(d: Model) => { const s = { m: { ...EXAMPLE, ...d }, example: false }; setState(s); save('fis.itax', s); }} />
+          <SaveLoad kind="income_tax" label="tax computation" getData={() => m} onLoad={(d: Model) => { const s = withDefaults({ m: d, example: false }); setState(s); save('fis.itax', s); }} />
           <button className="btn" onClick={() => { setState({ m: EXAMPLE, example: true }); save('fis.itax', { m: EXAMPLE, example: true }); }}>Example</button>
         </>} />
       <Callout tone="info" title="Prepares the return; does not file it">
         Only e-Return Intermediaries registered with the Income Tax Department may submit returns through its systems. Use these figures on the
         {' '}<a href="https://www.incometax.gov.in/iec/foportal/" target="_blank" rel="noreferrer">e-filing portal</a> or in the official offline utility. Always check against Form 26AS / AIS.
       </Callout>
+      {info.data && <p className="faint mt-sm" style={{ fontSize: 12 }}>Country: India · FY {info.data.year.financial_year} · AY {info.data.year.assessment_year} · Rule set {info.data.ruleset.id} v{info.data.ruleset.version}, checked {fmtDate(info.data.ruleset.rules_checked_on)}. {info.data.ruleset.status}</p>}
       <div className="mt">
         <Tabs label="Section" value={tab} onChange={(t) => { setTab(t); save('fis.itax.tab', t); }} options={[
           { value: 'form', label: 'Which ITR form' }, { value: 'individual', label: 'Individual / HUF tax' }, { value: 'entity', label: 'Firm & company tax' },
@@ -127,6 +134,7 @@ function ItrForm({ m, set }: { m: Model; set: (p: Partial<Model>) => void }) {
             <Check label="Director of a company" checked={p.director} onChange={(v) => up({ director: v })} />
             <Check label="Held unlisted equity shares during the year" checked={p.unlisted_equity} onChange={(v) => up({ unlisted_equity: v })} />
             <Check label="Foreign assets, foreign income or signing authority abroad" checked={p.foreign_assets_or_income} onChange={(v) => up({ foreign_assets_or_income: v })} />
+            <Check label="Accounts required to be audited (sets the due date)" checked={p.accounts_audited} onChange={(v) => up({ accounts_audited: v })} />
             <Check label="TDS under 194N (cash withdrawals)" checked={p.tds_194n} onChange={(v) => up({ tds_194n: v })} />
             <Check label="Tax on ESOPs deferred" checked={p.esop_tax_deferred} onChange={(v) => up({ esop_tax_deferred: v })} />
             <Check label="Losses to carry forward or brought-forward losses" checked={p.losses_to_carry_forward} onChange={(v) => up({ losses_to_carry_forward: v })} />
@@ -174,7 +182,8 @@ function Individual({ m, set }: { m: Model; set: (p: Partial<Model>) => void }) 
       ['Total income (rounded)', a.total_income, b.total_income], ['Tax at slab rates', a.slab_tax, b.slab_tax],
       ['Tax at special rates', Object.values(a.special_rate_tax).reduce((s, t) => s + t.tax, 0), Object.values(b.special_rate_tax).reduce((s, t) => s + t.tax, 0)],
       ['Rebate 87A', a.rebate_87a, b.rebate_87a], ['Surcharge', a.surcharge, b.surcharge], ['Marginal relief', a.marginal_relief, b.marginal_relief], ['Cess 4%', a.cess, b.cess],
-      ['Total tax', a.total_tax, b.total_tax], ['TDS and advance tax', a.tds_and_advance_tax, b.tds_and_advance_tax], ['Balance payable (refund if negative)', a.balance, b.balance]];
+      ['Total tax', a.total_tax, b.total_tax], ['TDS and advance tax', a.tds_and_advance_tax, b.tds_and_advance_tax], ['Balance payable (refund if negative)', a.balance, b.balance],
+      [], ['India, FY 2025-26, AY 2026-27', `Rule set ${r.data.ruleset?.id ?? ''} v${r.data.ruleset?.version ?? ''}`, 'Check against Form 26AS / AIS before filing']];
     downloadFile('income-tax-computation-AY2026-27.csv', toCSV(rows));
   };
   return (
@@ -187,7 +196,8 @@ function Individual({ m, set }: { m: Model; set: (p: Partial<Model>) => void }) 
             {num('salary', 'Salary / pension (after exempt allowances)')}
             {num('house_property', 'House property (net; loss as negative)', 'After 30% standard deduction and interest')}
             {num('business', 'Business / profession')}
-            {num('other_sources', 'Other sources (interest, dividends…)')}
+            {num('other_sources', 'Other sources (interest, rent…)', 'Enter dividends separately below')}
+            {num('dividends', 'Dividends', 'Taxed at slab rates; surcharge on them is capped at 15%')}
             {num('stcg_111a', 'Short-term gains on listed equity (111A)')}
             {num('ltcg_112a', 'Long-term gains on listed equity (112A)', 'Before the ₹1.25 lakh exemption')}
             {num('ltcg_112', 'Other long-term gains (112)', 'At 12.5% without indexation')}
@@ -202,11 +212,11 @@ function Individual({ m, set }: { m: Model; set: (p: Partial<Model>) => void }) 
         </Card>
         <Card title="Deductions (old regime only)" subtitle="Enter the eligible amount; limits are applied automatically">
           <div className="grid cols-2" style={{ gap: 10 }}>
-            {Object.entries({ '80C': '80C (PF, ELSS, LIC… max 1.5 lakh)', '80CCD(1B)': '80CCD(1B) NPS (max 50,000)', '80D': '80D health insurance', '80TTA': '80TTA savings interest (max 10,000)', '80TTB': '80TTB senior interest (max 50,000)', '80G': '80G donations (eligible amount)', other: 'Other Chapter VI-A' }).map(([k, label]) => (
+            {Object.entries({ '80C': '80C (PF, ELSS, LIC…)', '80CCC': '80CCC (pension fund)', '80CCD(1)': '80CCD(1) own NPS contribution', '80CCD(1B)': '80CCD(1B) NPS (max 50,000)', '80D': '80D health insurance', '80TTA': '80TTA savings interest (max 10,000)', '80TTB': '80TTB senior interest (max 50,000)', '80G': '80G donations (eligible amount)', other: 'Other Chapter VI-A' }).map(([k, label]) => (
               <NumberField key={k} label={label} value={x.deductions_old[k] ?? null} onChange={(v) => up({ deductions_old: { ...x.deductions_old, [k]: v } })} />
             ))}
           </div>
-          <p className="faint mt-sm" style={{ fontSize: 12 }}>The new regime allows only a few deductions (such as 80CCD(2)); these are ignored there.</p>
+          <p className="faint mt-sm" style={{ fontSize: 12 }}>80C, 80CCC and 80CCD(1) together are capped at ₹1.5 lakh (80CCE). The new regime allows only a few deductions (such as 80CCD(2)); these are ignored there.</p>
         </Card>
       </div>
       {r.error ? <ErrorBox error={r.error} /> : !r.data ? <Skeleton h={200} /> : <IndResult d={r.data} onExport={exportCsv} />}
@@ -226,7 +236,7 @@ function IndResult({ d, onExport }: { d: IndRes; onExport: () => void }) {
         <Kpi label={`Balance payable (${d.better_regime})`} value={inr(d[d.better_regime].balance)} delta={d[d.better_regime].balance < 0 ? 'Refund due' : undefined} deltaTone="pos" />
       </div>
       <Card title="Computation" subtitle="Side by side, with the sections applied" actions={<button className="btn sm" onClick={onExport}><Download size={14} />CSV</button>}>
-        <div className="table-wrap">
+        <div className="table-wrap" tabIndex={0}>
           <table className="data">
             <thead><tr><th>Item</th><th className="r">New regime (115BAC)</th><th className="r">Old regime</th></tr></thead>
             <tbody>
@@ -253,7 +263,7 @@ function IndResult({ d, onExport }: { d: IndRes; onExport: () => void }) {
       <div className="grid cols-2">
         {[a, b].map((g) => (
           <Card key={g.regime} title={`${g.regime === 'new' ? 'New' : 'Old'} regime: slab working`}>
-            <div className="table-wrap"><table className="data">
+            <div className="table-wrap" tabIndex={0}><table className="data">
               <thead><tr><th>Slab</th><th className="r">Income</th><th className="r">Rate</th><th className="r">Tax</th></tr></thead>
               <tbody>{g.slab_rows.map((s) => <tr key={s.from}><td>{inr(s.from)} – {s.to === null ? 'above' : inr(s.to)}</td><td className="r">{inr(s.amount)}</td><td className="r">{fmtPct(s.rate, 0)}</td><td className="r">{inr(s.tax)}</td></tr>)}
                 {Object.entries(g.special_rate_tax).filter(([, t]) => t.income > 0).map(([sec, t]) => (
@@ -292,7 +302,7 @@ function Entity({ m, set }: { m: Model; set: (p: Partial<Model>) => void }) {
       <Card title="Tax by option" subtitle="Lowest option highlighted">
         {r.error ? <ErrorBox error={r.error} /> : !r.data ? <Skeleton h={120} /> : (
           <>
-            <div className="table-wrap"><table className="data">
+            <div className="table-wrap" tabIndex={0}><table className="data">
               <thead><tr><th>Option</th><th className="r">Tax</th><th className="r">Surcharge</th><th className="r">Cess</th><th className="r">Total</th><th className="r">Effective</th></tr></thead>
               <tbody>{r.data.options.map((o) => (
                 <tr key={o.code} style={o.code === r.data!.lowest ? { background: 'var(--accent-soft)', fontWeight: 650 } : undefined}>
@@ -309,16 +319,16 @@ function Entity({ m, set }: { m: Model; set: (p: Partial<Model>) => void }) {
 }
 
 function DueDates() {
-  const [q, setQ] = useState<{ category: string; filing_date: string; total_income: N; tax_unpaid: N }>(() => loadRaw('fis.itax.due', { category: 'no_business', filing_date: '', total_income: null, tax_unpaid: null }));
+  const [q, setQ] = useState<{ category: string; filing_date: string; total_income: N; tax_unpaid: N; regime: 'new' | 'old'; age: string; resident: boolean }>(() => ({ regime: 'new', age: 'below_60', resident: true, ...loadRaw('fis.itax.due', { category: 'no_business', filing_date: '', total_income: null, tax_unpaid: null }) }));
   const upd = (p: Partial<typeof q>) => { const s = { ...q, ...p }; setQ(s); save('fis.itax.due', s); };
-  const body = q.filing_date ? { category: q.category, filing_date: q.filing_date, total_income: q.total_income ?? 0, tax_unpaid: q.tax_unpaid } : {};
+  const body = q.filing_date ? { category: q.category, filing_date: q.filing_date, total_income: q.total_income ?? 0, tax_unpaid: q.tax_unpaid, regime: q.regime, age: q.age, resident: q.resident } : {};
   const r = useCalc<DueRes>('/api/tax/due-dates', body);
   return (
     <div className="grid cols-2">
       <Card title="Due dates for AY 2026-27" subtitle="Returns of income for FY 2025-26">
         {r.error ? <ErrorBox error={r.error} /> : !r.data ? <Skeleton h={120} /> : (
           <>
-            <div className="table-wrap"><table className="data">
+            <div className="table-wrap" tabIndex={0}><table className="data">
               <thead><tr><th>Who</th><th>Due date</th></tr></thead>
               <tbody>{r.data.due_dates.map((d) => <tr key={d.category}><td style={{ whiteSpace: 'normal' }}>{d.label}</td><td>{fmtDate(d.due_date)}{d.statutory_due_date !== d.due_date && <div className="faint" style={{ fontSize: 11 }}>statutory {fmtDate(d.statutory_due_date)}</div>}</td></tr>)}
                 <tr><td>Belated return (139(4))</td><td>{fmtDate(r.data.belated_return_last_date)}</td></tr>
@@ -333,7 +343,11 @@ function DueDates() {
           <Field label="Date of filing"><input className="input" type="date" value={q.filing_date} onChange={(e) => upd({ filing_date: e.target.value })} /></Field>
           <NumberField label="Total income (₹)" value={q.total_income} onChange={(v) => upd({ total_income: v })} />
           <NumberField label="Tax unpaid on the due date (₹)" value={q.tax_unpaid} onChange={(v) => upd({ tax_unpaid: v })} />
+          <Select label="Tax regime" value={q.regime} onChange={(v) => upd({ regime: v })} options={[['new', 'New regime (115BAC)'], ['old', 'Old regime']]} />
+          <Select label="Age" value={q.age} onChange={(v) => upd({ age: v })} options={[['below_60', 'Below 60'], ['60_to_79', '60 to 79'], ['80_plus', '80 or more']]} />
         </div>
+        <div className="mt-sm"><Check label="Resident in India" checked={q.resident} onChange={(v) => upd({ resident: v })} /></div>
+        <p className="faint mt-sm" style={{ fontSize: 12 }}>The ₹5,000 / ₹1,000 fee under 234F applies only above the basic exemption limit, which depends on regime, age and residence.</p>
         {r.data?.late_filing ? (
           <div className="mt">
             <Callout tone={r.data.late_filing.late ? (r.data.late_filing.allowed ? 'warn' : 'error') : 'success'} title={r.data.late_filing.message}>

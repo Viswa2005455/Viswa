@@ -11,7 +11,7 @@ import uuid
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from ..auth.deps import current_user, log_activity
 from ..db.models import Activity, Project, SavedItem, SavedVersion, Upload, User, utcnow
 from ..db.session import get_db
+from .base import BaseModel
 
 router = APIRouter(prefix="/api", tags=["projects"])
 

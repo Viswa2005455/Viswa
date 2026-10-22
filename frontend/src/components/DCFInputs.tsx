@@ -37,7 +37,7 @@ export function DCFAssumptions({ model, patch }: { model: DCFModel; patch: (p: P
             <button className="btn icon sm" aria-label="Add a forecast year" onClick={() => setYears(n + 1)} disabled={n >= 15}><Plus size={14} /></button>
           </div>
         </div>
-        <div className="table-wrap">
+        <div className="table-wrap" tabIndex={0}>
           <table className="data">
             <thead><tr><th>Year</th><th>Revenue growth %</th><th>EBIT margin %</th></tr></thead>
             <tbody>

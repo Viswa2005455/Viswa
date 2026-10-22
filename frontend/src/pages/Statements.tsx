@@ -282,7 +282,7 @@ export function Statements() {
               </Card>
             </div>
             <Card title="Derived metrics" flush>
-              <div className="table-wrap" style={{ border: 0, borderRadius: 0 }}>
+              <div className="table-wrap" tabIndex={0} style={{ border: 0, borderRadius: 0 }}>
                 <table className="data">
                   <thead><tr><th>Metric</th>{r.periods.map((p) => <th key={p} className="r">{p}</th>)}</tr></thead>
                   <tbody>{METRIC_LABELS.map(([k, label, kind]) => (
@@ -302,7 +302,7 @@ export function Statements() {
         {tab === 'checks' && r && (
           <Card title="Reconciliation checks" subtitle="Tolerance: 0.5% of the larger value (minimum 1 unit) to allow for rounding in published statements">
             {r.checks.length === 0 ? <p className="muted">Map lines to standard items (Edit data tab) to enable checks.</p> : (
-              <div className="table-wrap">
+              <div className="table-wrap" tabIndex={0}>
                 <table className="data">
                   <thead><tr><th>Check</th><th>Period</th><th>Result</th><th className="r">Difference</th><th>Detail</th></tr></thead>
                   <tbody>{r.checks.map((c, i) => (
@@ -343,7 +343,7 @@ function StatementTable({ r, mode }: { r: Report; mode: 'horizontal' | 'vertical
         if (!lines.length) return null;
         return (
           <Card key={s.value} title={s.label} subtitle={mode === 'vertical' ? (s.value === 'balance' ? 'Each line as % of total assets' : 'Each line as % of revenue') : 'Values and change vs the previous period (Δ% = change / |prior|; colour-neutral because a rise is good for revenue but bad for costs)'} flush>
-            <div className="table-wrap" style={{ border: 0, borderRadius: 0 }}>
+            <div className="table-wrap" tabIndex={0} style={{ border: 0, borderRadius: 0 }}>
               <table className="data">
                 <thead>
                   <tr><th>Line item</th>{r.periods.map((p, i) => mode === 'horizontal'
@@ -394,7 +394,7 @@ function Editor({ data, setData, items }: { data: Data; setData: (d: Data) => vo
       </Card>
       {STMTS.map((s) => (
         <Card key={s.value} title={s.label} flush actions={<button className="btn sm" onClick={() => setData({ ...data, lines: [...data.lines, { label: 'New line', statement: s.value, key: null, values: Array(n).fill(null) }] })}><Plus size={14} />Line</button>}>
-          <div className="table-wrap" style={{ border: 0, borderRadius: 0 }}>
+          <div className="table-wrap" tabIndex={0} style={{ border: 0, borderRadius: 0 }}>
             <table className="data">
               <thead><tr><th>Line item</th><th>Standard item (enables checks)</th>{data.periods.map((p) => <th key={p} className="r">{p}</th>)}<th /></tr></thead>
               <tbody>

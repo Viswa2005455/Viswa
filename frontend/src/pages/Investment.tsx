@@ -149,7 +149,7 @@ export function Investment() {
 
               <Card title="Step-by-step calculation" flush>
                 <div style={{ padding: '0 18px 14px' }}><Formula>{`NPV = Σ CFₜ / (1 + r)ᵗ,  t = 0 … ${r.timeline.length - 1},  r = ${fmtPct(rate, 2)}\n${r.convention}`}</Formula></div>
-                <div className="table-wrap" style={{ border: 0, borderTop: '1px solid var(--border)', borderRadius: 0 }}>
+                <div className="table-wrap" tabIndex={0} style={{ border: 0, borderTop: '1px solid var(--border)', borderRadius: 0 }}>
                   <table className="data">
                     <thead><tr><th>t</th><th className="r">Cash flow</th><th className="r">Discount factor 1/(1+r)ᵗ</th><th className="r">Present value</th><th className="r">Cumulative</th><th className="r">Cumulative discounted</th></tr></thead>
                     <tbody>

@@ -58,7 +58,7 @@ function VarianceTable({ res }: { res: VarRes }) {
   const { settings } = useSettings();
   return (
     <>
-      <div className="table-wrap">
+      <div className="table-wrap" tabIndex={0}>
         <table className="data">
           <thead><tr><th>Variance</th><th className="r">Amount</th><th>F / A</th><th>Formula · working</th></tr></thead>
           <tbody>{res.variances.map((v) => (
@@ -109,7 +109,7 @@ function Variances({ m, set }: { m: Model; set: (p: Partial<Model>) => void }) {
     <div className="stack">
       <Card title="Direct materials" subtitle="SQ = standard quantity allowed for actual output. With two or more materials, mix and yield variances are shown."
         actions={<button className="btn sm" onClick={() => set({ materials: [...m.materials, { name: `Material ${m.materials.length + 1}`, std_qty: null, std_price: null, actual_qty: null, actual_price: null }] })}><Plus size={14} />Material</button>}>
-        <div className="table-wrap">
+        <div className="table-wrap" tabIndex={0}>
           <table className="data">
             <thead><tr><th>Material</th><th>Std qty (SQ)</th><th>Std price (SP)</th><th>Actual qty (AQ)</th><th>Actual price (AP)</th><th /></tr></thead>
             <tbody>{m.materials.map((x, i) => (
@@ -217,7 +217,7 @@ function CVP({ m, set }: { m: Model; set: (p: Partial<Model>) => void }) {
             </Card>
             {d.products.length > 1 && (
               <Card title="Break-even by product (at the stated mix)">
-                <div className="table-wrap"><table className="data">
+                <div className="table-wrap" tabIndex={0}><table className="data">
                   <thead><tr><th>Product</th><th className="r">Contribution / unit</th><th className="r">P/V</th><th className="r">BEP units</th><th className="r">BEP sales</th></tr></thead>
                   <tbody>{d.products.map((p) => <tr key={p.name}><td>{p.name}</td><td className="r">{money(p.contribution_per_unit)}</td><td className="r">{fmtPct(p.pv_ratio, 1)}</td><td className="r">{fmtNum(p.breakeven_units, 0)}</td><td className="r">{money(p.breakeven_sales)}</td></tr>)}</tbody>
                 </table></div>
@@ -299,7 +299,7 @@ function LimitingFactor({ m, set }: { m: Model; set: (p: Partial<Model>) => void
           <NumberField label="Available" value={l.resource_available} onChange={(v) => upd({ resource_available: v })} />
           <NumberField label="Fixed costs (optional)" value={l.fixed_costs} onChange={(v) => upd({ fixed_costs: v })} />
         </div>
-        <div className="table-wrap"><table className="data">
+        <div className="table-wrap" tabIndex={0}><table className="data">
           <thead><tr><th>Product</th><th>Contribution / unit</th><th>{l.resource_name} / unit</th><th>Max demand (units)</th><th /></tr></thead>
           <tbody>{l.products.map((p, i) => (
             <tr key={i}>
@@ -317,7 +317,7 @@ function LimitingFactor({ m, set }: { m: Model; set: (p: Partial<Model>) => void
             <Kpi label="Profit" value={isNum(d.profit) ? money(d.profit) : '—'} />
             <Kpi label={`Unused ${d.resource_name}`} value={fmtNum(d.resource_unused, 1)} />
           </div>
-          <div className="table-wrap"><table className="data">
+          <div className="table-wrap" tabIndex={0}><table className="data">
             <thead><tr><th>Rank</th><th>Product</th><th className="r">Contribution per {d.resource_name.replace(/s$/, '')}</th><th className="r">Units</th><th className="r">{d.resource_name} used</th><th className="r">Contribution</th><th>Why</th></tr></thead>
             <tbody>{d.plan.map((p) => <tr key={p.name}><td>{p.rank}</td><td>{p.name}</td><td className="r">{fmtNum(p.contribution_per_resource, 2)}</td><td className="r">{fmtNum(p.units, 2)}</td><td className="r">{fmtNum(p.resource_used, 2)}</td><td className="r">{money(p.contribution)}</td><td className="faint">{p.reason}</td></tr>)}</tbody>
           </table></div>

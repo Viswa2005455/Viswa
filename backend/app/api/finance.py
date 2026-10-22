@@ -4,18 +4,20 @@ from __future__ import annotations
 
 import math
 from dataclasses import asdict
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter
-from pydantic import BaseModel, Field, model_validator
+from pydantic import Field, model_validator
 
 from ..finance import FinanceInputError, forecasting, ratios, sensitivity, tvm, valuation_range, variance
 from ..finance.cost_of_capital import capm, wacc
 from ..finance.dcf import OUTPUTS, SENSITIVITY_VARIABLES, DCFInputs, run_dcf
+from .base import BaseModel
 
 router = APIRouter(prefix="/api/finance", tags=["finance"])
 
-Rate = Field(ge=-0.99, le=10)
+# Rates are decimals (0.10 = 10%). Above 100% is refused so a percentage typed as 10 is not read as 1000%.
+Rate = Field(ge=-0.99, le=1)
 
 
 def clean(obj):
@@ -34,8 +36,8 @@ def clean(obj):
 class AppraisalRequest(BaseModel):
     cash_flows: list[float] = Field(min_length=2, max_length=101, description="CF0 (t=0, usually negative) then CF1..CFn")
     discount_rate: float = Rate
-    finance_rate: float | None = Field(default=None, ge=-0.99, le=10)
-    reinvest_rate: float | None = Field(default=None, ge=-0.99, le=10)
+    finance_rate: float | None = Field(default=None, ge=-0.99, le=1)
+    reinvest_rate: float | None = Field(default=None, ge=-0.99, le=1)
 
 
 @router.post("/appraisal")
@@ -111,15 +113,15 @@ class WACCRequest(BaseModel):
 
 @router.post("/wacc")
 def wacc_endpoint(req: WACCRequest):
-    return asdict(wacc(req.equity_value, req.debt_value, req.cost_of_equity, req.pre_tax_cost_of_debt, req.tax_rate))
+    return clean(asdict(wacc(req.equity_value, req.debt_value, req.cost_of_equity, req.pre_tax_cost_of_debt, req.tax_rate)))
 
 
 # ---------------------------------------------------------------- DCF
 
 class DCFRequest(BaseModel):
     base_revenue: float = Field(gt=0)
-    revenue_growth: list[float] = Field(min_length=1, max_length=30)
-    ebit_margin: list[float] = Field(min_length=1, max_length=30)
+    revenue_growth: list[Annotated[float, Field(gt=-1, le=5)]] = Field(min_length=1, max_length=30)
+    ebit_margin: list[Annotated[float, Field(ge=-5, le=1)]] = Field(min_length=1, max_length=30)
     tax_rate: float = Field(ge=0, lt=1)
     da_pct_revenue: float = Field(ge=0, le=1)
     capex_pct_revenue: float = Field(ge=0, le=2)

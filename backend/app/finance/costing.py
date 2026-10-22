@@ -8,7 +8,7 @@ Terminology follows CIMA / ICAI / IMA usage.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from . import FinanceInputError
 
@@ -165,6 +165,10 @@ def cvp(products: list[ProductCVP], fixed_costs: float, target_profit: float | N
         raise FinanceInputError("Fixed costs cannot be negative.")
     if not 0 <= tax_rate < 1:
         raise FinanceInputError("Tax rate must be between 0 and 1.")
+    if any(p.mix < 0 for p in products):
+        raise FinanceInputError("Sales mix weights cannot be negative.")
+    if expected_units is not None and expected_units < 0:
+        raise FinanceInputError("Expected units cannot be negative.")
     total_mix = sum(p.mix for p in products)
     if total_mix <= 0:
         raise FinanceInputError("The sales mix must add up to more than zero.")
@@ -265,6 +269,8 @@ def limiting_factor(products: list[LFProduct], resource_available: float, resour
     for p in products:
         if p.resource_per_unit <= 0:
             raise FinanceInputError(f"{p.name}: resource per unit must be greater than zero.")
+        if p.max_demand < 0:
+            raise FinanceInputError(f"{p.name}: maximum demand cannot be negative.")
         rows.append({"name": p.name, "contribution_per_unit": p.contribution_per_unit, "resource_per_unit": p.resource_per_unit,
                      "max_demand": p.max_demand, "contribution_per_resource": p.contribution_per_unit / p.resource_per_unit})
     order = sorted(rows, key=lambda r: r["contribution_per_resource"], reverse=True)
@@ -282,8 +288,10 @@ def limiting_factor(products: list[LFProduct], resource_available: float, resour
         r["resource_used"] = r["units"] * r["resource_per_unit"]
         r["contribution"] = r["units"] * r["contribution_per_unit"]
     total = sum(r["contribution"] for r in order)
-    needed = sum(r["max_demand"] * r["resource_per_unit"] for r in rows)
+    # Only products worth making compete for the resource; loss-making ones are never produced.
+    needed = sum(r["max_demand"] * r["resource_per_unit"] for r in rows if r["contribution_per_unit"] > 0)
     return {"plan": order, "total_contribution": total, "profit": total - fixed_costs if fixed_costs is not None else None,
             "resource_available": resource_available, "resource_needed_for_full_demand": needed,
             "is_binding": needed > resource_available, "resource_unused": max(left, 0.0), "resource_name": resource_name,
-            "note": "Ranks by contribution per unit of the scarce resource. With more than one binding constraint, use linear programming."}
+            "note": "Ranks by contribution per unit of the scarce resource. With more than one binding constraint, use linear programming. "
+                    "Resource needed counts only products with positive contribution."}

@@ -138,6 +138,9 @@ def _metrics(c: CompanyIn) -> dict[str, Num]:
         "ev_ebitda": _div((mcap + debt_t - g("cash", t)) if _ok(mcap) and _ok(debt_t) and _ok(g("cash", t)) else None, ebitda)
         if _ok(ebitda) and ebitda > 0 else None,
     }
+    # Returns and turnover use average balances; with no prior period they fall back to closing balances.
+    m["_closing_basis"] = float(not (p >= 0 and _ok(g("total_equity", p)) and _ok(g("total_assets", p))))
+    m["_negative_equity"] = float(_ok(g("total_equity", t)) and g("total_equity", t) <= 0)
     if d.n >= 2:
         z2 = altman(d, t)[0]
         bm = beneish(d, t)
@@ -188,6 +191,17 @@ def compare(companies: list[CompanyIn]) -> PeerReport:
             models = {m.get("_beneish_model") for m in data if m.get("beneish_m") is not None}
             if len(models) > 1:
                 notes.append("Some scores use the 5-variable model and some the 8-variable model; they are not directly comparable.")
+        if md.key in ("roe", "roa", "roce", "asset_turnover", "receivable_days"):
+            closing = [n for n, m in zip(names, data) if m.get("_closing_basis") and m.get(md.key) is not None]
+            if closing and len(closing) < len(present):
+                notes.append("Uses closing instead of average balances for " + ", ".join(closing)
+                             + " (no prior period); the others use averages, so compare with care.")
+            elif closing:
+                notes.append("Uses closing balances (no prior period was supplied).")
+        if md.key in ("debt_equity", "pb", "roe"):
+            neg = [n for n, m in zip(names, data) if m.get("_negative_equity")]
+            if neg:
+                notes.append("Not ranked for " + ", ".join(neg) + ": shareholders' equity is zero or negative.")
         if md.key in ("pe", "pb", "ev_ebitda"):
             notes.append("Lower can mean cheaper or lower expected growth; this is not a buy or sell signal.")
         rows.append(Row(md.key, md.name, md.group, md.unit, md.better, md.formula, vals, ranks,

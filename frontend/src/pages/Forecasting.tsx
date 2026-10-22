@@ -149,7 +149,7 @@ export function Forecasting() {
           {r && (
             <div className="grid cols-2">
               <Card title="Forecast values" flush>
-                <div className="table-wrap" style={{ border: 0, borderRadius: 0, maxHeight: 300 }}>
+                <div className="table-wrap" tabIndex={0} style={{ border: 0, borderRadius: 0, maxHeight: 300 }}>
                   <table className="data">
                     <thead><tr><th>Period</th><th className="r">Forecast</th><th className="r">Lower</th><th className="r">Upper</th></tr></thead>
                     <tbody>{r.forecast.map((v, i) => (

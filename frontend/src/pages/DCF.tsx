@@ -116,7 +116,7 @@ export function DCF() {
 
           {stale && (
             <Card title="Projection" subtitle={`Discounting at WACC ${fmtPct(model.wacc, 2)}, ${model.mid_year ? 'mid-year' : 'end-of-year'} convention`} flush>
-              <div className="table-wrap" style={{ border: 0, borderTop: '1px solid var(--border)', borderRadius: 0 }}>
+              <div className="table-wrap" tabIndex={0} style={{ border: 0, borderTop: '1px solid var(--border)', borderRadius: 0 }}>
                 <table className="data">
                   <thead><tr><th>Line item</th>{stale.years.map((y) => <th key={y.year} className="r">Year {y.year}</th>)}</tr></thead>
                   <tbody>

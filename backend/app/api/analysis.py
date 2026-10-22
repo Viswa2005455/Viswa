@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import Field
 from sqlalchemy.orm import Session
 
 from ..auth.deps import current_user
@@ -16,6 +16,7 @@ from ..files import archive, service
 from ..files.model_check import check_workbook
 from ..files.screener import NotScreener, parse_screener
 from ..finance import forensic, peers, profile
+from .base import BaseModel
 from .finance import clean
 
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])

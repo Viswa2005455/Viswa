@@ -176,6 +176,14 @@ def _component(key, name, formula, inputs: dict[str, Num], fn, note: str = "") -
 
 # --------------------------------------------------------------------------- Beneish
 
+def _gmi(gm_p: Num, gm_t: Num) -> float:
+    # With a zero or negative margin the ratio flips sign or explodes: -0.10 / -0.20 = 0.5 would read
+    # as "margins improving" when they fell. Beneish's index assumes positive margins.
+    if not (_ok(gm_p) and _ok(gm_t)) or gm_p <= 0 or gm_t <= 0:
+        raise ZeroDivisionError
+    return gm_p / gm_t
+
+
 def beneish(d: _Data, t: int) -> Score:
     p = t - 1
     g = d.get
@@ -200,7 +208,8 @@ def beneish(d: _Data, t: int) -> Score:
                    "Above 1 means receivables grew faster than sales."),
         _component("GMI", "Gross margin index", "Gross margin_t−1 / Gross margin_t",
                    {"Gross margin (t−1)": gm_p, "Gross margin (t)": gm_t},
-                   lambda: ratio(gm_p, gm_t), "Above 1 means margins are deteriorating."),
+                   lambda: _gmi(gm_p, gm_t), "Above 1 means margins are deteriorating. Not calculated when either "
+                   "gross margin is zero or negative, because the index then changes meaning."),
         _component("AQI", "Asset quality index", "[1 − (CA_t + PPE_t) / TA_t] / [1 − (CA_t−1 + PPE_t−1) / TA_t−1]",
                    {"Current assets (t)": g("current_assets", t), "Net PPE (t)": g("ppe", t), "Total assets (t)": g("total_assets", t),
                     "Current assets (t−1)": g("current_assets", p), "Net PPE (t−1)": g("ppe", p), "Total assets (t−1)": g("total_assets", p)},
@@ -418,7 +427,7 @@ def cash_flags(d: _Data) -> list[Flag]:
     for i in range(n):
         if ni_all[i] is not None and cfo_all[i] is not None and ni_all[i] > 0 and cfo_all[i] < 0:
             flags.append(Flag("high", "Profit with negative operating cash flow",
-                              f"Net income was positive but operating cash flow was negative.", P[i]))
+                              "Net income was positive but operating cash flow was negative.", P[i]))
     for i in range(1, n):
         rg = _growth(g("revenue", i - 1), g("revenue", i))
         for key, label in (("receivables", "Receivables"), ("inventory", "Inventory")):
@@ -427,7 +436,13 @@ def cash_flags(d: _Data) -> list[Flag]:
                 flags.append(Flag("medium", f"{label} growing faster than sales",
                                   f"{label} grew {xg:.0%} while revenue grew {rg:.0%}. This can signal aggressive "
                                   "credit terms, channel stuffing or slow-moving stock.", P[i]))
-        de_t, de_p = _div(g("total_debt", i), g("total_equity", i)), _div(g("total_debt", i - 1), g("total_equity", i - 1))
+        eq_t, eq_p = g("total_equity", i), g("total_equity", i - 1)
+        if eq_t is not None and eq_t <= 0 and (eq_p is None or eq_p > 0):
+            flags.append(Flag("high", "Equity turned zero or negative",
+                              "Shareholders' equity is zero or negative: liabilities exceed assets. Debt-to-equity is "
+                              "not meaningful here, and the company may be technically insolvent.", P[i]))
+        de_t = _div(g("total_debt", i), eq_t) if eq_t is not None and eq_t > 0 else None
+        de_p = _div(g("total_debt", i - 1), eq_p) if eq_p is not None and eq_p > 0 else None
         if de_t is not None and de_p is not None and de_t - de_p > 0.25:
             flags.append(Flag("medium", "Debt rising quickly relative to equity",
                               f"Debt-to-equity went from {de_p:.2f} to {de_t:.2f}.", P[i]))

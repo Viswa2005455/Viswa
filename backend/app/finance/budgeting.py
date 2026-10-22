@@ -8,7 +8,8 @@ Methods per line
                   up from drivers and carries a justification).
 
 Money is handled with Decimal and rounded to 2 decimals per month; any rounding remainder is
-placed in the final month so that the months always add up exactly to the annual amount.
+placed in the latest month with the largest weight (the final month for even phasing), so the
+months always add up exactly to the annual amount and a zero-weight month stays zero.
 """
 
 from __future__ import annotations
@@ -26,7 +27,10 @@ MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", 
 
 
 def D(x) -> Decimal:
-    return x if isinstance(x, Decimal) else Decimal(str(x))
+    d = x if isinstance(x, Decimal) else Decimal(str(x))
+    if not d.is_finite():
+        raise FinanceInputError("Amounts must be finite numbers.")
+    return d
 
 
 def month_labels(start_month: int, start_year: int) -> list[str]:
@@ -55,7 +59,8 @@ def phase(annual: Decimal, weights: list[float] | None = None) -> list[Decimal]:
     if total_w == 0:
         raise FinanceInputError("Phasing weights cannot all be zero.")
     months = [(annual * wi / total_w).quantize(CENT, ROUND_HALF_UP) for wi in w]
-    months[-1] += annual.quantize(CENT, ROUND_HALF_UP) - sum(months)
+    target = max(range(12), key=lambda i: (w[i], i))
+    months[target] += annual.quantize(CENT, ROUND_HALF_UP) - sum(months)
     return months
 
 

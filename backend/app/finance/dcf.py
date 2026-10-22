@@ -11,6 +11,8 @@ flows are discounted at t - 0.5; the terminal value is still discounted at t = n
 
 from __future__ import annotations
 
+import math
+
 from dataclasses import dataclass, field, replace
 from typing import Literal
 
@@ -83,8 +85,15 @@ def validate(inp: DCFInputs) -> None:
     n = len(inp.revenue_growth)
     if n < 1 or n > 30:
         raise FinanceInputError("Forecast period must be between 1 and 30 years.")
-    if inp.base_revenue <= 0:
-        raise FinanceInputError("Base-year revenue must be positive.")
+    if not math.isfinite(inp.base_revenue) or inp.base_revenue <= 0:
+        raise FinanceInputError("Base-year revenue must be a positive number.")
+    for name, values in (("Revenue growth", inp.revenue_growth), ("EBIT margin", inp.ebit_margin)):
+        if any(v is None or not math.isfinite(v) for v in values):
+            raise FinanceInputError(f"{name}: every year needs a number (blanks are not treated as zero).")
+    if any(g <= -1 for g in inp.revenue_growth):
+        raise FinanceInputError("Revenue growth must be above -100% in every year.")
+    if any(m > 1 for m in inp.ebit_margin):
+        raise FinanceInputError("EBIT margin cannot exceed 100% of revenue (enter 0.20 for 20%).")
     if not 0 <= inp.tax_rate < 1:
         raise FinanceInputError("Tax rate must be a decimal between 0 and 1 (e.g. 0.25 for 25%).")
     if inp.wacc <= -1:
@@ -142,6 +151,9 @@ def run_dcf(inp: DCFInputs) -> DCFResult:
 
     if last.fcff < 0:
         warnings.append("Final-year FCFF is negative; a terminal value based on it is not meaningful.")
+    if inp.mid_year:
+        warnings.append("Mid-year convention: yearly cash flows are discounted at t − 0.5, the terminal value at the end of year n "
+                        "(a conservative choice; some practitioners discount a Gordon terminal value at n − 0.5).")
     if inp.capex_pct_revenue < inp.da_pct_revenue and inp.terminal_method == "gordon" and inp.terminal_growth > 0:
         warnings.append("CapEx is below D&A while assuming perpetual growth; reinvestment may be understated.")
 
@@ -167,8 +179,8 @@ def run_dcf(inp: DCFInputs) -> DCFResult:
 SENSITIVITY_VARIABLES = {
     "wacc": "WACC",
     "terminal_growth": "Terminal growth",
-    "revenue_growth": "Revenue growth (all years)",
-    "ebit_margin": "EBIT margin (all years)",
+    "revenue_growth": "Revenue growth (average of all years)",
+    "ebit_margin": "EBIT margin (average of all years)",
     "tax_rate": "Tax rate",
     "capex_pct_revenue": "CapEx % of revenue",
     "da_pct_revenue": "D&A % of revenue",
@@ -189,13 +201,28 @@ def get_variable(inp: DCFInputs, name: str) -> float:
 
 
 def set_variable(inp: DCFInputs, name: str, value: float) -> DCFInputs:
+    """Set one assumption. For year-by-year assumptions (growth, margin) every year is shifted by the
+    same amount so their average equals `value`; the year profile is kept, and the base average
+    reproduces the base case exactly."""
     if name not in SENSITIVITY_VARIABLES:
         raise FinanceInputError(f"Unknown variable '{name}'.")
-    if name == "revenue_growth":
-        return replace(inp, revenue_growth=[value] * len(inp.revenue_growth))
-    if name == "ebit_margin":
-        return replace(inp, ebit_margin=[value] * len(inp.revenue_growth))
+    if name in ("revenue_growth", "ebit_margin"):
+        years = len(inp.revenue_growth)
+        current = list(getattr(inp, name))
+        current = current * years if len(current) == 1 else current
+        shift = value - sum(current) / len(current)
+        return replace(inp, **{name: [v + shift for v in current]})
     return replace(inp, **{name: value})
+
+
+def check_variable(inp: DCFInputs, name: str) -> None:
+    """Refuse assumptions the chosen terminal method ignores (varying them would show a flat, misleading result)."""
+    if name not in SENSITIVITY_VARIABLES:
+        raise FinanceInputError(f"Unknown variable '{name}'.")
+    if name == "exit_multiple" and inp.terminal_method != "exit_multiple":
+        raise FinanceInputError("Exit multiple has no effect with the Gordon growth terminal method.")
+    if name == "terminal_growth" and inp.terminal_method != "gordon":
+        raise FinanceInputError("Terminal growth has no effect with the exit-multiple terminal method.")
 
 
 OUTPUTS = {

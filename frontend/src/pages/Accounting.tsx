@@ -79,7 +79,7 @@ function Schedule({ title, cols, rows, file, sub }: { title: string; cols: [stri
   const exportCsv = () => downloadFile(file, toCSV([cols.map((c) => c[1]), ...rows.map((r) => cols.map(([k]) => get(r, k) ?? ''))]));
   return (
     <Card title={title} subtitle={sub} flush actions={<button className="btn sm" onClick={exportCsv}><Download size={14} />CSV</button>}>
-      <div className="table-wrap" style={{ border: 0, borderRadius: 0, maxHeight: 420 }}>
+      <div className="table-wrap" tabIndex={0} style={{ border: 0, borderRadius: 0, maxHeight: 420 }}>
         <table className="data">
           <thead><tr>{cols.map(([k, l]) => <th key={k} className={k === cols[0][0] ? '' : 'r'}>{l}</th>)}</tr></thead>
           <tbody>{rows.map((r, i) => <tr key={i}>{cols.map(([k, , t], j) => <td key={k} className={j ? 'r' : ''}>{t === 'i' ? String(get(r, k) ?? '') : isNum(get(r, k)) ? fmtNum(get(r, k), 2) : '—'}</td>)}</tr>)}</tbody>
@@ -92,7 +92,7 @@ function Schedule({ title, cols, rows, file, sub }: { title: string; cols: [stri
 function Journal({ jes }: { jes: JE[] }) {
   return (
     <Card title="Journal entries" subtitle="Debits first; amounts rounded to two decimals">
-      <div className="table-wrap"><table className="data">
+      <div className="table-wrap" tabIndex={0}><table className="data">
         <thead><tr><th>Date</th><th>Account</th><th className="r">Debit</th><th className="r">Credit</th></tr></thead>
         <tbody>{jes.flatMap((j, i) => [
           ...j.lines.map((l, k) => (
@@ -218,7 +218,7 @@ function EPS({ m, set }: { m: Model; set: (p: Partial<Model>) => void }) {
           <NumberField label="Weighted average ordinary shares" value={e.weighted_shares} onChange={(v) => u({ weighted_shares: v })} />
           <NumberField label="Average market price (for options)" value={e.average_price} onChange={(v) => u({ average_price: v })} />
         </div>
-        <div className="table-wrap mt-sm"><table className="data">
+        <div className="table-wrap mt-sm" tabIndex={0}><table className="data">
           <thead><tr><th>Potential ordinary shares</th><th>Type</th><th>Options / shares on conversion</th><th>Exercise price</th><th>Dividends added back</th><th>After-tax interest added back</th><th /></tr></thead>
           <tbody>{e.securities.map((s, i) => (
             <tr key={i}>
@@ -242,7 +242,7 @@ function EPS({ m, set }: { m: Model; set: (p: Partial<Model>) => void }) {
           <Kpi label="Diluted shares" value={fmtNum(d.shares_diluted, 0)} />
         </div>
         <Card title="Dilution sequence" subtitle={d.standard}>
-          <div className="table-wrap"><table className="data">
+          <div className="table-wrap" tabIndex={0}><table className="data">
             <thead><tr><th>Security</th><th className="r">Incremental shares</th><th className="r">Numerator effect</th><th className="r">Incremental EPS</th><th>Result</th></tr></thead>
             <tbody>{d.securities.map((s) => <tr key={s.name}><td>{s.name}{s.working && <div className="faint mono" style={{ fontSize: 11 }}>{s.working}</div>}</td><td className="r">{fmtNum(s.incremental_shares, 2)}</td><td className="r">{fmtNum(s.numerator_effect, 2)}</td><td className="r">{isNum(s.per_share) ? fmtNum(s.per_share, 4) : '—'}</td>
               <td><Badge tone={s.included ? 'accent' : 'warn'}>{s.included ? 'Included' : 'Excluded'}</Badge> <span className="faint" style={{ fontSize: 12 }}>{s.reason}</span></td></tr>)}</tbody>
@@ -268,7 +268,7 @@ function DeferredTax({ m, set }: { m: Model; set: (p: Partial<Model>) => void })
           <NumberField label="Current tax for the year (optional)" value={t.current_tax} onChange={(v) => u({ current_tax: v })} />
           <NumberField label="Opening net deferred tax liability" value={t.opening_net_dtl} onChange={(v) => u({ opening_net_dtl: v })} hint="Negative for a net asset" />
         </div>
-        <div className="table-wrap"><table className="data">
+        <div className="table-wrap" tabIndex={0}><table className="data">
           <thead><tr><th>Item</th><th>Asset or liability</th><th>Carrying amount</th><th>Tax base</th><th /></tr></thead>
           <tbody>{t.items.map((x, i) => (
             <tr key={i}>
@@ -320,7 +320,7 @@ function Materiality({ m, set }: { m: Model; set: (p: Partial<Model>) => void })
         </div>
         {d.notes.map((n) => <Callout key={n} tone="warn">{n}</Callout>)}
         <Card title="Benchmark ranges" subtitle={d.standard}>
-          <div className="table-wrap"><table className="data">
+          <div className="table-wrap" tabIndex={0}><table className="data">
             <thead><tr><th>Benchmark</th><th className="r">Amount</th><th className="r">Common range</th><th className="r">Materiality range</th></tr></thead>
             <tbody>{d.ranges.map((x) => <tr key={x.label}><td>{x.label}</td><td className="r">{money(x.amount)}</td><td className="r">{fmtPct(x.low_pct, 1)} – {fmtPct(x.high_pct, 1)}</td><td className="r">{money(x.low)} – {money(x.high)}</td></tr>)}</tbody>
           </table></div>

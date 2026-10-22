@@ -85,3 +85,42 @@ def test_endpoints(client):
     assert r.json()["valid"] == 300
     bad = client.post("/api/finance/dcf/monte-carlo", json={"model": MODEL, "distributions": [{"variable": "wacc", "kind": "normal", "a": 0.1, "b": -1}]})
     assert bad.status_code == 422
+
+
+def test_reverse_dcf_at_base_price_returns_base_profile():
+    # Year-by-year growth is shifted, not flattened, so the base price must give back the base average exactly.
+    base = replace(BASE, revenue_growth=[0.10, 0.08, 0.06, 0.04, 0.02])
+    r = reverse_dcf(base, run_dcf(base).value_per_share)
+    assert r.implied == pytest.approx(0.06, abs=1e-6)
+    assert "the same as" in r.message
+
+
+def test_monte_carlo_centred_on_year_profile():
+    base = replace(BASE, revenue_growth=[0.10, 0.08, 0.06, 0.04, 0.02])
+    r = monte_carlo(base, [Distribution("revenue_growth", "normal", 0.06, 1e-6)], n=200, seed=3)
+    assert r.percentiles["p50"] == pytest.approx(run_dcf(base).value_per_share, rel=1e-4)
+
+
+def test_monte_carlo_rejects_ignored_variable_and_bad_clip():
+    with pytest.raises(FinanceInputError):
+        monte_carlo(BASE, [Distribution("exit_multiple", "normal", 10, 1)], n=100)
+    with pytest.raises(FinanceInputError):
+        monte_carlo(BASE, [Distribution("wacc", "normal", 0.1, 0.01, clip_low=0.2, clip_high=0.1)], n=100)
+
+
+def test_break_even_skips_invalid_end_of_range():
+    from app.finance.sensitivity import break_even
+    target = run_dcf(replace(BASE, wacc=0.11)).value_per_share
+    # low = 2% is below terminal growth (3%), where the model is invalid; the solution inside must still be found
+    assert break_even(BASE, "wacc", "value_per_share", target, 0.02, 0.20) == pytest.approx(0.11, abs=1e-6)
+
+
+def test_api_refuses_non_finite_and_percent_typed_rates(client):
+    body = {"equity_value": 600, "debt_value": 400, "cost_of_equity": 0.112, "pre_tax_cost_of_debt": 0.06, "tax_rate": 0.25}
+    assert client.post("/api/finance/wacc", json=body).json()["wacc"] == pytest.approx(0.0852)
+    r = client.post("/api/finance/wacc", content=b'{"equity_value": Infinity, "debt_value": 400, "cost_of_equity": 0.112, '
+                    b'"pre_tax_cost_of_debt": 0.06, "tax_rate": 0.25}', headers={"content-type": "application/json"})
+    assert r.status_code == 422
+    assert client.post("/api/finance/wacc", json={**body, "cost_of_equity": 10}).status_code == 422  # 10 typed for 10%
+    bad = {**MODEL, "revenue_growth": [-1.0]}
+    assert client.post("/api/finance/dcf", json=bad).status_code == 422

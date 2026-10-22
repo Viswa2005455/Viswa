@@ -5,16 +5,16 @@ from __future__ import annotations
 import datetime as dt
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, Field
+from pydantic import Field
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from ..auth.deps import SESSION_COOKIE, current_session, current_user, log_activity
-from ..auth.security import (DUMMY_HASH, EMAIL_RE, hash_password, limiter, new_session_token, normalise_email,
-                             password_problems, token_hash, verify_password)
+from ..auth.security import DUMMY_HASH, EMAIL_RE, hash_password, limiter, new_session_token, normalise_email, password_problems, token_hash, verify_password
 from ..config import Settings, get_settings
 from ..db.models import Activity, AuthSession, Project, SavedItem, Upload, User, utcnow
 from ..db.session import get_db
+from .base import BaseModel
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 account = APIRouter(prefix="/api/account", tags=["account"])

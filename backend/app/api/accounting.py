@@ -5,9 +5,10 @@ from __future__ import annotations
 from typing import Literal
 
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from ..finance import accounting as acc
+from .base import BaseModel
 from .finance import clean
 
 router = APIRouter(prefix="/api/accounting", tags=["accounting"])

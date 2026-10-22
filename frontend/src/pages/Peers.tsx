@@ -186,7 +186,7 @@ export function Peers() {
       </div>
       {r && <div className="mt">
               <Card title="All metrics" subtitle="Latest year for each company. Rank badges: 1 is best." flush>
-                <div className="table-wrap">
+                <div className="table-wrap" tabIndex={0}>
                   <table className="data">
                     <thead><tr><th>Metric</th>{r.companies.map((c) => <th key={c} className="r">{c}</th>)}<th className="r">Median</th></tr></thead>
                     <tbody>

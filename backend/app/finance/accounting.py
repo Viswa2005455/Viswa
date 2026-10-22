@@ -15,7 +15,7 @@ schedules close exactly to zero.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from . import FinanceInputError
 
@@ -28,8 +28,17 @@ class JournalEntry:
 
 
 def _je(when: str, memo: str, *lines: tuple[str, float, float]) -> JournalEntry:
-    return JournalEntry(when, [{"account": a, "debit": round(d, 2) if d else None, "credit": round(c, 2) if c else None}
-                               for a, d, c in lines if (d or c)], memo)
+    rows = [{"account": a, "debit": round(d, 2) if d else None, "credit": round(c, 2) if c else None}
+            for a, d, c in lines if (d or c)]
+    # Rounding each line to the cent can leave the entry a cent out; put the difference on the
+    # largest line of the short side so every entry balances exactly.
+    diff = round(sum(r["debit"] or 0 for r in rows) - sum(r["credit"] or 0 for r in rows), 2)
+    if diff and abs(diff) <= 0.01 * len(rows):
+        side = "credit" if diff > 0 else "debit"
+        target = max((r for r in rows if r[side]), key=lambda r: r[side], default=None)
+        if target is not None:
+            target[side] = round(target[side] + abs(diff), 2)
+    return JournalEntry(when, rows, memo)
 
 
 # --------------------------------------------------------------------------- bonds
@@ -96,6 +105,11 @@ def lease_schedule(payment: float, periods: int, annual_rate: float, periods_per
                    classification: str = "finance") -> dict:
     if payment <= 0 or periods <= 0:
         raise FinanceInputError("Payment and number of periods must be positive.")
+    if float(periods) != int(periods):
+        raise FinanceInputError("The number of lease periods must be a whole number.")
+    periods = int(periods)
+    if min(initial_direct_costs, incentives, prepaid) < 0:
+        raise FinanceInputError("Initial direct costs, incentives and prepaid amounts cannot be negative.")
     if periods_per_year not in (1, 2, 4, 12):
         raise FinanceInputError("Periods per year must be 1, 2, 4 or 12.")
     if timing not in ("advance", "arrears"):
@@ -108,6 +122,9 @@ def lease_schedule(payment: float, periods: int, annual_rate: float, periods_per
     disc = [1 / (1 + r) ** (t if timing == "arrears" else t - 1) for t in range(1, periods + 1)]
     liability0 = payment * sum(disc)
     rou0 = liability0 + initial_direct_costs + prepaid - incentives
+    if rou0 < 0:
+        raise FinanceInputError("Lease incentives exceed the lease liability plus costs, which would make the right-of-use "
+                                "asset negative. Check the amounts (the excess is usually income or a receivable).")
     total_cost = payment * periods + initial_direct_costs + prepaid - incentives
     sl_cost = total_cost / periods
     rows, liab, rou = [], liability0, rou0
@@ -146,8 +163,14 @@ def lease_schedule(payment: float, periods: int, annual_rate: float, periods_per
     else:
         jes.append(_je("Period 1", "ASC 842 operating lease: single straight-line lease cost",
                        ("Lease expense", sl_cost, 0), ("Lease liability", first["payment"] - first["interest"], 0),
-                       ("Cash", 0, first["payment"]), ("Right-of-use asset", 0, first["rou_amortisation"])))
+                       ("Cash", 0, first["payment"]),
+                       ("Right-of-use asset", max(-first["rou_amortisation"], 0), max(first["rou_amortisation"], 0))))
+    notes = []
+    if classification == "operating" and any(row["rou_amortisation"] < 0 for row in rows):
+        notes.append("In some periods the straight-line cost is below the interest on the liability, so the ROU asset "
+                     "increases (negative amortisation). This follows from the ASC 842 plug; review the inputs.")
     return {"initial_liability": liability0, "initial_rou_asset": rou0, "period_rate": r, "total_cash": payment * periods,
+            "notes": notes,
             "straight_line_cost": sl_cost if classification == "operating" else None, "schedule": rows,
             "journal_entries": [e.__dict__ for e in jes], "classification": classification,
             "standard": ("ASC 842 finance lease; same pattern as the IFRS 16 / Ind AS 116 lessee model."
@@ -163,6 +186,11 @@ def depreciation_schedule(cost: float, salvage: float, life: int, method: str = 
                           ddb_factor: float = 2.0, switch_to_sl: bool = True) -> dict:
     if cost <= 0 or life <= 0 or salvage < 0 or salvage > cost:
         raise FinanceInputError("Cost and life must be positive, and salvage between zero and cost.")
+    if float(life) != int(life):
+        raise FinanceInputError("Useful life must be a whole number of years.")
+    life = int(life)
+    if ddb_factor <= 0:
+        raise FinanceInputError("The declining-balance factor must be positive (2 = double declining).")
     base = cost - salvage
     rows, nbv, acc = [], cost, 0.0
     if method == "units":
@@ -286,10 +314,14 @@ def deferred_tax(items: list[TempDiff], tax_rate: float, current_tax: float | No
                        "(valuation allowance under ASC 740; probable future taxable profit under IAS 12)."}
     if current_tax is not None:
         out["income_tax_expense"] = current_tax + movement
+        total = current_tax + movement
+        # Each line goes on its natural side; a net tax credit (benefit) or a current-tax refund flips
+        # its line, so the entry always balances: expense = current tax + deferred movement.
         out["journal_entries"] = [_je("Year end", "Current and deferred tax",
-                                      ("Income tax expense", current_tax + movement if current_tax + movement > 0 else 0, 0),
-                                      ("Deferred tax liability (net)", -movement if movement < 0 else 0, movement if movement > 0 else 0),
-                                      ("Income taxes payable", 0, current_tax)).__dict__]
+                                      ("Income tax expense" if total >= 0 else "Income tax benefit", max(total, 0), max(-total, 0)),
+                                      ("Deferred tax liability (net)", max(-movement, 0), max(movement, 0)),
+                                      ("Income taxes payable" if current_tax >= 0 else "Income tax receivable",
+                                       max(-current_tax, 0), max(current_tax, 0))).__dict__]
     return out
 
 

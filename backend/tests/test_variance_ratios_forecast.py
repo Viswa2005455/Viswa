@@ -166,5 +166,53 @@ def test_missing_values_raise():
         fc.forecast([1, None, 3, 4], "linear", 2)
 
 
-def test_mape_undefined_with_zero_actuals():
-    assert fc.error_metrics([0, 1], [1, 1])["mape"] is None
+def test_mape_leaves_out_zero_actuals():
+    # Hand: |100-110|/100 = 10%, |200-190|/200 = 5%; the zero actual is left out -> mean 7.5%
+    assert fc.error_metrics([0, 100, 200], [5, 110, 190])["mape"] == pytest.approx(7.5)
+    assert fc.error_metrics([0, 0], [1, 1])["mape"] is None
+
+
+# ---------------- v0.12 audit: independent hand-calculated answers ----------------
+
+def test_ses_interval_uses_uncentred_one_step_errors():
+    # alpha 0.5 on 10..60: one-step errors 10, 15, 17.5, 18.75, 19.375; SSE 1358.203 -> sigma sqrt(SSE/5) = 16.4815
+    # final level 50.3125; 95% interval 50.3125 +/- 1.959964 x 16.4815 = [18.01, 82.62]
+    r = fc.forecast([10, 20, 30, 40, 50, 60], "ses", 1, alpha=0.5)
+    assert r.forecast[0] == pytest.approx(50.3125)
+    assert r.lower[0] == pytest.approx(18.01, abs=0.01) and r.upper[0] == pytest.approx(82.62, abs=0.01)
+
+
+def test_failed_backtest_does_not_kill_forecast():
+    # The training window ends on a negative value, which CAGR cannot use; the full series is still valid.
+    r = fc.forecast([10, 20, 30, 40, -5, 60, 70, 80], "cagr", 2, holdout=3)
+    assert r.forecast[0] == pytest.approx(80 * (80 / 10) ** (1 / 7))
+    assert r.backtest["mape"] is None and any("Backtest could not run" in n for n in r.notes)
+
+
+def test_zero_budget_line_is_material():
+    line = v.analyse_line("New software", "expense", 0, 50)
+    assert line.variance_pct is None and line.material
+
+
+def test_variance_rejects_nan():
+    with pytest.raises(FinanceInputError):
+        v.analyse_line("x", "expense", float("nan"), 1)
+
+
+def test_ratio_input_validation():
+    with pytest.raises(FinanceInputError):
+        compute_ratios({"net_income": 10, "shares_outstanding": 0, "share_price": 5})
+    with pytest.raises(FinanceInputError):
+        compute_ratios({"tax_rate": 25})  # 25 typed for 25%
+    with pytest.raises(FinanceInputError):
+        compute_ratios({"revenue": float("inf")})
+
+
+def test_roe_undefined_when_closing_equity_negative():
+    r = {x.key: x for x in compute_ratios({"net_income": 10, "total_equity": -20, "total_equity_prior": 100})}
+    assert r["roe"].status == "undefined"
+
+
+def test_interest_cover_rejects_negative_interest():
+    r = {x.key: x for x in compute_ratios({"operating_income": 100, "interest_expense": -20})}
+    assert r["interest_coverage"].status == "undefined" and "positive" in r["interest_coverage"].notes[0]

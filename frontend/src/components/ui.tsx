@@ -1,5 +1,5 @@
 import { AlertTriangle, ChevronDown, GraduationCap, Info, CheckCircle2, XCircle, Construction } from 'lucide-react';
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { cloneElement, isValidElement, useEffect, useId, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { isNum, parseInputNumber } from '../lib/format';
 import { useSettings } from '../lib/settings';
@@ -63,11 +63,20 @@ export function Kpi({ label, value, delta, deltaTone, hint }: { label: string; v
   );
 }
 
+/** Label + control. A single <input>/<select>/<textarea> child is linked to the label automatically. */
 export function Field({ label, hint, children, htmlFor }: { label: ReactNode; hint?: ReactNode; children: ReactNode; htmlFor?: string }) {
+  const autoId = useId();
+  let id = htmlFor;
+  let control = children;
+  if (!id && isValidElement(children) && typeof children.type === 'string' && ['input', 'select', 'textarea'].includes(children.type)) {
+    const own = (children.props as { id?: string }).id;
+    id = own ?? autoId;
+    if (!own) control = cloneElement(children as ReactElement<{ id?: string }>, { id });
+  }
   return (
     <div className="field">
-      <label className="field-label" htmlFor={htmlFor}>{label}</label>
-      {children}
+      <label className="field-label" htmlFor={id}>{label}</label>
+      {control}
       {hint && <div className="field-hint">{hint}</div>}
     </div>
   );

@@ -116,7 +116,7 @@ export function Scenarios() {
       {res.error && <ErrorBox error={res.error} />}
 
       <Card title="Assumptions by scenario" subtitle="Highlighted values differ from the base case. Blank override = use the DCF model's value." flush>
-        <div className="table-wrap" style={{ border: 0, borderRadius: 0 }}>
+        <div className="table-wrap" tabIndex={0} style={{ border: 0, borderRadius: 0 }}>
           <table className="data">
             <thead>
               <tr><th>Assumption</th>{scenarios.map((s, i) => (
@@ -156,7 +156,7 @@ export function Scenarios() {
 
       <div className="grid cols-2 mt">
         <Card title="Outputs" flush>
-          <div className="table-wrap" style={{ border: 0, borderRadius: 0 }}>
+          <div className="table-wrap" tabIndex={0} style={{ border: 0, borderRadius: 0 }}>
             <table className="data">
               <thead><tr><th>Metric</th>{scenarios.map((s) => <th key={s.id} className="r">{s.name}</th>)}</tr></thead>
               <tbody>

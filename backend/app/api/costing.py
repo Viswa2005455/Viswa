@@ -5,9 +5,10 @@ from __future__ import annotations
 from dataclasses import asdict
 
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from ..finance import costing
+from .base import BaseModel
 from .finance import clean
 
 router = APIRouter(prefix="/api/costing", tags=["costing"])

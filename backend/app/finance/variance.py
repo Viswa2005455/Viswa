@@ -26,7 +26,10 @@ LineKind = Literal["revenue", "expense"]
 
 def D(x: float | int | str | Decimal) -> Decimal:
     # str() avoids binary-float artefacts such as Decimal(0.1) = 0.1000000000000000055...
-    return x if isinstance(x, Decimal) else Decimal(str(x))
+    d = x if isinstance(x, Decimal) else Decimal(str(x))
+    if not d.is_finite():
+        raise FinanceInputError("Amounts must be finite numbers.")
+    return d
 
 
 @dataclass
@@ -74,6 +77,9 @@ def analyse_line(name: str, kind: LineKind, budget, actual, *, materiality_pct: 
     material = False
     if materiality_pct is not None and pct is not None and abs(pct) >= D(materiality_pct):
         material = True
+    if materiality_pct is not None and pct is None and var != 0:
+        material = True  # an unbudgeted amount is an unlimited percentage variance
+        notes.append("Not in the budget (budget is zero), so it is treated as material.")
     if materiality_abs is not None and abs(var) >= D(materiality_abs):
         material = True
     return VarianceLine(name, kind, b, a, var, pct, classify(kind, var), impact, material, notes, group)

@@ -138,7 +138,7 @@ function TwoWay({ model, output }: { model: DCFModel; output: string }) {
         {res.error && <ErrorBox error={res.error} />}
         {!g && res.loading && <Skeleton h={240} />}
         {g && (
-          <div className="table-wrap">
+          <div className="table-wrap" tabIndex={0}>
             <table className="data heat">
               <thead>
                 <tr><th className="axis">{yd.label} ↓ / {xd.label} →</th>{g.x_values.map((x) => <th key={x} className="r" style={near(x, g.base_x) ? { color: 'var(--text)' } : undefined}>{fmtVar(xVar, x)}</th>)}</tr>
@@ -251,7 +251,7 @@ function Tornado({ model, output }: { model: DCFModel; output: string }) {
         </div>
         <Legend items={[{ label: 'Input at low value', color: 'var(--chart-4)' }, { label: 'Input at high value', color: 'var(--chart-2)' }]} />
         {t && (
-          <div className="table-wrap mt">
+          <div className="table-wrap mt" tabIndex={0}>
             <table className="data">
               <thead><tr><th>Input</th><th className="r">Low</th><th className="r">Base</th><th className="r">High</th><th className="r">Output at low</th><th className="r">Output at high</th><th className="r">Swing</th></tr></thead>
               <tbody>{t.bars.map((b) => (

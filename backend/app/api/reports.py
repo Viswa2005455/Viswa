@@ -7,13 +7,14 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import Response
-from pydantic import BaseModel, Field
+from pydantic import Field
 from sqlalchemy.orm import Session
 
 from ..auth.deps import current_user, log_activity
 from ..db.models import User
 from ..db.session import get_db
 from ..reports import builder
+from .base import BaseModel
 from .finance import DCFRequest
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])

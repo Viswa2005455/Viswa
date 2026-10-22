@@ -16,7 +16,7 @@ const inr = (v: N | undefined) => fmtMoney(v ?? null, 'INR', 2);
 const blank = (): HeadsN => ({ igst: null, cgst: null, sgst: null, cess: null });
 const zero = (h: HeadsN) => Object.fromEntries(HEADS.map((k) => [k, isNum(h[k]) ? h[k] : 0]));
 
-interface Info { states: Record<string, string>; sources: Record<string, string>; filing_steps: Record<string, string[]>; filing_note: string }
+interface Info { states: Record<string, string>; ruleset: { id: string; version: string; rules_checked_on: string; status: string }; sources: Record<string, string>; filing_steps: Record<string, string[]>; filing_note: string }
 interface RetRow { form: string; what: string; frequency: string; due: string; next_due: string | null; optional: boolean; source: string }
 interface RetRes { returns: RetRow[]; state: string; period?: string; financial_year?: string; warnings: string[]; notes: string[]; registration_required?: boolean; threshold?: number; message?: string }
 interface B3Res {
@@ -27,7 +27,7 @@ interface B3Res {
 }
 interface InvRow { number: string; date: string | null; gstin: string | null; state: string; rate: number | null; taxable_value: number; igst: number; cgst: number; sgst: number; cess: number; invoice_value: number; note_type?: string; row: number | null }
 interface G1Res {
-  tables: { b2b: InvRow[]; b2cl: InvRow[]; exp: InvRow[]; sez: InvRow[]; cdnr: InvRow[]; cdnur: InvRow[]; b2cs: { state: string; rate: number; taxable_value: number; igst: number; cgst: number; sgst: number; cess: number; count: number }[];
+  tables: { b2b: InvRow[]; b2cl: InvRow[]; exp: InvRow[]; sez: InvRow[]; deemed: InvRow[]; cdnr: InvRow[]; cdnur: InvRow[]; b2cs: { state: string; rate: number; taxable_value: number; igst: number; cgst: number; sgst: number; cess: number; count: number }[];
     nil: Record<string, Record<string, number>>; hsn: { section: string; hsn: string; rate: number | null; taxable_value: number; igst: number; cgst: number; sgst: number; cess: number; count: number }[];
     documents: { document: string; count: number; from: string; to: string }[] };
   summary: Record<string, { taxable_value: number; igst: number; cgst: number; sgst: number; cess: number; count: number }>;
@@ -43,9 +43,11 @@ interface RecRes {
 const PROFILE = { registration: 'regular', state_code: '27', aggregate_turnover_prev_fy: 30000000 as N, supplies: 'goods', composition_kind: 'trader', qrmp: false, year: 2026, month: 9 };
 const B3 = { outward_tax: { igst: 180000, cgst: 90000, sgst: 90000, cess: 0 } as HeadsN, reverse_charge_tax: blank(), eco_9_5_tax: blank(),
   itc_available: { igst: 150000, cgst: 60000, sgst: 50000, cess: 0 } as HeadsN, itc_reversed: blank(), opening_credit: blank(),
-  taxable_value_month: 2000000 as N, rule_86b_applies: false, due_date: '', filing_date: '', nil_return: false, aggregate_turnover: 30000000 as N };
-type Model = { profile: typeof PROFILE; b3: typeof B3; gstin: string; aato: N };
-const EXAMPLE: Model = { profile: PROFILE, b3: B3, gstin: '', aato: null };
+  taxable_value_month: 2000000 as N, rule_86b_applies: false, rule_86b_exempt: false, due_date: '', filing_date: '', nil_return: false, aggregate_turnover: 30000000 as N };
+type Model = { profile: typeof PROFILE; b3: typeof B3; gstin: string; aato: N; period: string };
+const EXAMPLE: Model = { profile: PROFILE, b3: B3, gstin: '', aato: null, period: '2026-09' };
+// Saved workings from older versions lack newer fields; fill them from the defaults.
+const withDefaults = (s: { m: Partial<Model>; example: boolean }) => ({ ...s, m: { ...EXAMPLE, ...s.m, profile: { ...PROFILE, ...s.m.profile }, b3: { ...B3, ...s.m.b3 } } });
 
 function Select<T extends string>({ label, value, onChange, options }: { label: string; value: T; onChange: (v: T) => void; options: [T, string][] }) {
   return <Field label={label}><select className="input" value={value} onChange={(e) => onChange(e.target.value as T)}>{options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>;
@@ -60,7 +62,7 @@ function useCalc<T>(path: string, body: unknown) {
 
 export function GST() {
   const [tab, setTab] = useState<Tab>(() => loadRaw('fis.gst.tab', 'returns'));
-  const [state, setState] = useState<{ m: Model; example: boolean }>(() => loadRaw('fis.gst', { m: EXAMPLE, example: true }));
+  const [state, setState] = useState<{ m: Model; example: boolean }>(() => withDefaults(loadRaw('fis.gst', { m: EXAMPLE, example: true })));
   const m = state.m;
   const set = (p: Partial<Model>) => { const s = { m: { ...m, ...p }, example: false }; setState(s); save('fis.gst', s); };
   const info = useAsync(() => api.get<Info>('/api/gst/info'), []);
@@ -69,12 +71,13 @@ export function GST() {
       <PageHeader title="GST Returns" badge={state.example ? <Badge tone="sample">Example figures</Badge> : <Badge tone="accent">Your figures</Badge>}
         subtitle="Which returns apply and when they are due, GSTR-3B credit set-off in the order the law requires, GSTR-1 tables built from your sales register, and purchase register vs GSTR-2B matching."
         actions={<>
-          <SaveLoad kind="gst" label="GST working" getData={() => m} onLoad={(d: Model) => { const s = { m: { ...EXAMPLE, ...d }, example: false }; setState(s); save('fis.gst', s); }} />
+          <SaveLoad kind="gst" label="GST working" getData={() => m} onLoad={(d: Model) => { const s = withDefaults({ m: d, example: false }); setState(s); save('fis.gst', s); }} />
           <button className="btn" onClick={() => { setState({ m: EXAMPLE, example: true }); save('fis.gst', { m: EXAMPLE, example: true }); }}>Example</button>
         </>} />
       <Callout tone="info" title="Prepares returns; does not file them">
         Filing through software needs a licensed GST Suvidha Provider and the taxpayer's API consent. File on the <a href="https://www.gst.gov.in/" target="_blank" rel="noreferrer">GST portal</a> with EVC or DSC using these figures. Your sales and purchase files are read in memory and not stored.
       </Callout>
+      {info.data && <p className="faint mt-sm" style={{ fontSize: 12 }}>Country: India · Rule set {info.data.ruleset.id} v{info.data.ruleset.version}, checked {fmtDate(info.data.ruleset.rules_checked_on)}. {info.data.ruleset.status}</p>}
       <div className="mt">
         <Tabs label="Section" value={tab} onChange={(t) => { setTab(t); save('fis.gst.tab', t); }} options={[
           { value: 'returns', label: 'Which returns' }, { value: 'gstr3b', label: 'GSTR-3B' }, { value: 'gstr1', label: 'GSTR-1 from sales register' },
@@ -97,7 +100,8 @@ const fmtDate = (s: string | null) => (s ? new Date(s + 'T00:00:00').toLocaleDat
 function Returns({ m, set, states }: { m: Model; set: (p: Partial<Model>) => void; states?: Record<string, string> }) {
   const p = m.profile;
   const up = (x: Partial<typeof PROFILE>) => set({ profile: { ...p, ...x } });
-  const r = useCalc<RetRes>('/api/gst/returns', { ...p, aggregate_turnover_prev_fy: p.aggregate_turnover_prev_fy ?? 0 });
+  // Turnover decides QRMP, GSTR-9/9C and thresholds, so a blank is never sent as zero.
+  const r = useCalc<RetRes>('/api/gst/returns', isNum(p.aggregate_turnover_prev_fy) ? p : null);
   return (
     <div className="grid cols-2">
       <Card title="Business" subtitle="Registration and turnover">
@@ -109,18 +113,18 @@ function Returns({ m, set, states }: { m: Model; set: (p: Partial<Model>) => voi
           <Select label="Supplies" value={p.supplies} onChange={(v) => up({ supplies: v })} options={[['goods', 'Goods only'], ['services', 'Services only'], ['both', 'Goods and services']]} />
           {p.registration === 'composition' && <Select label="Composition type" value={p.composition_kind} onChange={(v) => up({ composition_kind: v })} options={[['trader', 'Trader (1%)'], ['manufacturer', 'Manufacturer (1%)'], ['restaurant', 'Restaurant (5%)'], ['services', 'Services (6%)']]} />}
           <Field label="Tax period"><div className="row" style={{ flexWrap: 'nowrap' }}>
-            <select className="input" value={p.month} onChange={(e) => up({ month: Number(e.target.value) })}>{MONTHS.map((n, i) => <option key={n} value={i + 1}>{n}</option>)}</select>
-            <input className="input" style={{ width: 90 }} type="number" value={p.year} onChange={(e) => up({ year: Number(e.target.value) || 2026 })} /></div></Field>
+            <select className="input" aria-label="Tax period month" value={p.month} onChange={(e) => up({ month: Number(e.target.value) })}>{MONTHS.map((n, i) => <option key={n} value={i + 1}>{n}</option>)}</select>
+            <input className="input" aria-label="Tax period year" style={{ width: 90 }} type="number" value={p.year} onChange={(e) => up({ year: Number(e.target.value) || 2026 })} /></div></Field>
         </div>
         {p.registration === 'regular' && <div className="mt-sm"><Check label="Opted for QRMP (quarterly returns, monthly payment)" checked={p.qrmp} onChange={(v) => up({ qrmp: v })} /></div>}
       </Card>
       <Card title="Returns for this period" subtitle={r.data?.period ? `${MONTHS[p.month - 1]} ${p.year} · FY ${r.data.financial_year} · ${r.data.state}` : undefined}>
-        {r.error ? <ErrorBox error={r.error} /> : !r.data ? <Skeleton h={120} /> : r.data.message ? (
+        {!isNum(p.aggregate_turnover_prev_fy) ? <p className="faint">Enter last year's aggregate turnover to see which returns apply.</p> : r.error ? <ErrorBox error={r.error} /> : !r.data ? <Skeleton h={120} /> : r.data.message ? (
           <Callout tone={r.data.registration_required ? 'warn' : 'success'} title={r.data.registration_required ? 'Registration required' : 'Registration not required on turnover'}>{r.data.message}</Callout>
         ) : (
           <>
             {r.data.warnings.map((w) => <Callout key={w} tone="warn">{w}</Callout>)}
-            <div className="table-wrap mt-sm"><table className="data">
+            <div className="table-wrap mt-sm" tabIndex={0}><table className="data">
               <thead><tr><th>Return</th><th>What</th><th>Due</th><th>Next due</th></tr></thead>
               <tbody>{r.data.returns.map((x) => (
                 <tr key={x.form}><td><b>{x.form}</b>{x.optional && <div><Badge>optional</Badge></div>}</td><td style={{ whiteSpace: 'normal', minWidth: 160 }}>{x.what}<div className="faint" style={{ fontSize: 11 }}>{x.frequency}</div></td>
@@ -146,13 +150,13 @@ function GSTR3B({ m, set }: { m: Model; set: (p: Partial<Model>) => void }) {
   const b = m.b3;
   const up = (x: Partial<typeof B3>) => set({ b3: { ...b, ...x } });
   const body = { outward_tax: zero(b.outward_tax), reverse_charge_tax: zero(b.reverse_charge_tax), eco_9_5_tax: zero(b.eco_9_5_tax), itc_available: zero(b.itc_available),
-    itc_reversed: zero(b.itc_reversed), opening_credit: zero(b.opening_credit), taxable_value_month: b.taxable_value_month, rule_86b_applies: b.rule_86b_applies,
+    itc_reversed: zero(b.itc_reversed), opening_credit: zero(b.opening_credit), taxable_value_month: b.taxable_value_month, rule_86b_applies: b.rule_86b_applies, rule_86b_exempt: b.rule_86b_exempt,
     due_date: b.due_date || null, filing_date: b.filing_date || null, nil_return: b.nil_return, aggregate_turnover: b.aggregate_turnover };
   const r = useCalc<B3Res>('/api/gst/gstr3b', body);
   return (
     <div className="stack">
       <Card title="Liability and input tax credit" subtitle="Tax amounts in rupees. Outward liability comes from GSTR-1; credit from GSTR-2B (Table 4A)">
-        <div className="table-wrap"><table className="data">
+        <div className="table-wrap" tabIndex={0}><table className="data">
           <thead><tr><th /><th>IGST</th><th>CGST</th><th>SGST / UTGST</th><th>Cess</th></tr></thead>
           <tbody>
             <HeadsGrid label="Outward taxable supplies (3.1 a, b)" value={b.outward_tax} onChange={(h) => up({ outward_tax: h })} />
@@ -170,6 +174,7 @@ function GSTR3B({ m, set }: { m: Model; set: (p: Partial<Model>) => void }) {
         </div>
         <div className="row mt-sm" style={{ gap: 18 }}>
           <Check label="Rule 86B applies regardless of the monthly value" checked={b.rule_86b_applies} onChange={(v) => up({ rule_86b_applies: v })} />
+          <Check label="Exempt from Rule 86B (one of its provisos applies)" checked={b.rule_86b_exempt} onChange={(v) => up({ rule_86b_exempt: v })} />
           <Check label="Nil return" checked={b.nil_return} onChange={(v) => up({ nil_return: v })} />
         </div>
       </Card>
@@ -182,7 +187,7 @@ function GSTR3B({ m, set }: { m: Model; set: (p: Partial<Model>) => void }) {
             <Kpi label="Late fee" value={inr(r.data.late_fee?.fee ?? 0)} delta={r.data.late_fee ? `cap ${inr(r.data.late_fee.cap)}` : undefined} deltaTone="muted" />
           </div>
           <Card title="Payment of tax (Table 6.1)" subtitle="Credit applied in the order of section 49, 49A and Rule 88A, keeping cash to the minimum">
-            <div className="table-wrap"><table className="data">
+            <div className="table-wrap" tabIndex={0}><table className="data">
               <thead><tr><th>Head</th><th className="r">Tax payable</th><th className="r">Paid by IGST credit</th><th className="r">CGST credit</th><th className="r">SGST credit</th><th className="r">Cess credit</th><th className="r">Paid in cash</th></tr></thead>
               <tbody>{r.data.table_6_1.map((t) => (
                 <tr key={t.head}><td><b>{t.head}</b></td><td className="r">{inr(t.tax_payable)}</td>
@@ -219,7 +224,7 @@ function GSTR1({ m, set }: { m: Model; set: (p: Partial<Model>) => void }) {
   const run = async () => {
     if (!file) return;
     setBusy(true); setErr(null);
-    try { setRes(await api.form<G1Res>('/api/gst/gstr1', { file, supplier_gstin: m.gstin.trim().toUpperCase(), aggregate_turnover: isNum(m.aato) ? String(m.aato) : null })); }
+    try { setRes(await api.form<G1Res>('/api/gst/gstr1', { file, supplier_gstin: m.gstin.trim().toUpperCase(), aggregate_turnover: isNum(m.aato) ? String(m.aato) : null, period: m.period })); }
     catch (e) { setErr((e as Error).message); setRes(null); } finally { setBusy(false); }
   };
   const inv = (rows: InvRow[]) => rows.map((r) => [r.number, r.date, r.gstin ?? '', r.state, r.rate, r.taxable_value, r.igst, r.cgst, r.sgst, r.cess, r.invoice_value]);
@@ -231,8 +236,9 @@ function GSTR1({ m, set }: { m: Model; set: (p: Partial<Model>) => void }) {
         <div className="grid cols-4" style={{ gap: 10, alignItems: 'end' }}>
           <Field label="Your GSTIN"><input className="input" value={m.gstin} maxLength={15} placeholder="27AAPFU0939F1ZV" onChange={(e) => set({ gstin: e.target.value })} /></Field>
           <NumberField label="Last year's turnover (₹, sets HSN digits)" value={m.aato} onChange={(v) => set({ aato: v })} />
+          <Field label="Return period" hint="Sets the B2C large limit and date checks"><input className="input" type="month" min="2017-07" value={m.period} onChange={(e) => set({ period: e.target.value })} /></Field>
           <FilePick label="Sales register" file={file} onFile={setFile} />
-          <button className="btn primary" disabled={!file || m.gstin.trim().length !== 15 || busy} onClick={run}><FileSpreadsheet size={15} />{busy ? 'Reading…' : 'Build GSTR-1'}</button>
+          <button className="btn primary" disabled={!file || m.gstin.trim().length !== 15 || !/^\d{4}-\d{2}$/.test(m.period) || busy} onClick={run}><FileSpreadsheet size={15} />{busy ? 'Reading…' : 'Build GSTR-1'}</button>
         </div>
         {err && <div className="mt-sm"><ErrorBox error={err} /></div>}
       </Card>
@@ -245,19 +251,19 @@ function GSTR1({ m, set }: { m: Model; set: (p: Partial<Model>) => void }) {
             <Kpi label="Errors / warnings" value={`${res.errors} / ${res.warnings}`} delta={`${res.file.rows} rows read from ${res.file.sheet}`} deltaTone={res.errors ? 'neg' : 'pos'} />
           </div>
           <Card title="Summary by table" subtitle="Negative notes reduce liability">
-            <div className="table-wrap"><table className="data">
+            <div className="table-wrap" tabIndex={0}><table className="data">
               <thead><tr><th>Table</th><th className="r">Documents</th><th className="r">Taxable value</th><th className="r">IGST</th><th className="r">CGST</th><th className="r">SGST</th><th className="r">Cess</th></tr></thead>
               <tbody>{Object.entries(res.summary).map(([k, s]) => <tr key={k}><td>{TABLE_NAMES[k] ?? k}</td><td className="r">{s.count}</td><td className="r">{inr(s.taxable_value)}</td><td className="r">{inr(s.igst)}</td><td className="r">{inr(s.cgst)}</td><td className="r">{inr(s.sgst)}</td><td className="r">{inr(s.cess)}</td></tr>)}</tbody>
             </table></div>
             <div className="row mt-sm">
-              {(['b2b', 'b2cl', 'exp', 'cdnr', 'cdnur'] as const).filter((k) => res.tables[k].length).map((k) => <button key={k} className="btn sm" onClick={() => csvOf(`gstr1-${k}.csv`, invHead, inv(res.tables[k]))}><Download size={13} />{k.toUpperCase()}</button>)}
+              {(['b2b', 'b2cl', 'exp', 'sez', 'deemed', 'cdnr', 'cdnur'] as const).filter((k) => res.tables[k].length).map((k) => <button key={k} className="btn sm" onClick={() => csvOf(`gstr1-${k}.csv`, invHead, inv(res.tables[k]))}><Download size={13} />{k.toUpperCase()}</button>)}
               {res.tables.b2cs.length > 0 && <button className="btn sm" onClick={() => csvOf('gstr1-b2cs.csv', ['Place of supply', 'Rate %', 'Taxable value', 'IGST', 'CGST', 'SGST', 'Cess'], res.tables.b2cs.map((b) => [b.state, b.rate, b.taxable_value, b.igst, b.cgst, b.sgst, b.cess]))}><Download size={13} />B2CS</button>}
               {res.tables.hsn.length > 0 && <button className="btn sm" onClick={() => csvOf('gstr1-hsn.csv', ['Section', 'HSN', 'Rate %', 'Taxable value', 'IGST', 'CGST', 'SGST', 'Cess', 'Lines'], res.tables.hsn.map((h) => [h.section, h.hsn, h.rate, h.taxable_value, h.igst, h.cgst, h.sgst, h.cess, h.count]))}><Download size={13} />HSN (Table 12)</button>}
             </div>
           </Card>
           {res.issues.length > 0 && (
             <Card title="Problems found" subtitle="Fix these in your books before filing">
-              <div className="table-wrap" style={{ maxHeight: 360 }}><table className="data">
+              <div className="table-wrap" tabIndex={0} style={{ maxHeight: 360 }}><table className="data">
                 <thead><tr><th>Row</th><th>Document</th><th>Level</th><th>Message</th></tr></thead>
                 <tbody>{res.issues.map((i, k) => <tr key={k}><td>{i.row ?? '—'}</td><td>{i.invoice}</td><td><Badge tone={i.level === 'error' ? 'neg' : 'warn'}>{i.level}</Badge></td><td style={{ whiteSpace: 'normal' }}>{i.message}</td></tr>)}</tbody>
               </table></div>
@@ -265,12 +271,12 @@ function GSTR1({ m, set }: { m: Model; set: (p: Partial<Model>) => void }) {
           )}
           <div className="grid cols-2">
             <Card title="B2C small (Table 7)" subtitle="By place of supply and rate">
-              {res.tables.b2cs.length === 0 ? <p className="faint">None.</p> : <div className="table-wrap"><table className="data">
+              {res.tables.b2cs.length === 0 ? <p className="faint">None.</p> : <div className="table-wrap" tabIndex={0}><table className="data">
                 <thead><tr><th>Place of supply</th><th className="r">Rate</th><th className="r">Taxable value</th><th className="r">Tax</th></tr></thead>
                 <tbody>{res.tables.b2cs.map((b) => <tr key={b.state + b.rate}><td>{b.state}</td><td className="r">{b.rate}%</td><td className="r">{inr(b.taxable_value)}</td><td className="r">{inr(b.igst + b.cgst + b.sgst)}</td></tr>)}</tbody></table></div>}
             </Card>
             <Card title="HSN summary (Table 12)" subtitle="Split into B2B and B2C">
-              <div className="table-wrap" style={{ maxHeight: 300 }}><table className="data">
+              <div className="table-wrap" tabIndex={0} style={{ maxHeight: 300 }}><table className="data">
                 <thead><tr><th>Section</th><th>HSN / SAC</th><th className="r">Rate</th><th className="r">Taxable value</th><th className="r">Tax</th></tr></thead>
                 <tbody>{res.tables.hsn.map((h, i) => <tr key={i}><td>{h.section}</td><td>{h.hsn}</td><td className="r">{h.rate ?? '—'}%</td><td className="r">{inr(h.taxable_value)}</td><td className="r">{inr(h.igst + h.cgst + h.sgst)}</td></tr>)}</tbody></table></div>
             </Card>
@@ -281,7 +287,7 @@ function GSTR1({ m, set }: { m: Model; set: (p: Partial<Model>) => void }) {
     </div>
   );
 }
-const TABLE_NAMES: Record<string, string> = { '4A_b2b': '4A – B2B invoices', '5_b2cl': '5 – B2C large (inter-state, over ₹1 lakh)', '6A_exports': '6A – Exports', '6B_sez': '6B/6C – SEZ and deemed exports', '7_b2cs': '7 – B2C small (groups)', '9B_cdnr': '9B – Credit/debit notes (registered)', '9B_cdnur': '9B – Credit/debit notes (unregistered)' };
+const TABLE_NAMES: Record<string, string> = { '4A_b2b': '4A – B2B invoices', '5_b2cl': '5 – B2C large (inter-state, over ₹1 lakh)', '6A_exports': '6A – Exports', '6B_sez': '6B – SEZ supplies', '6C_deemed_exports': '6C – Deemed exports', '7_b2cs': '7 – B2C small (groups)', '9B_cdnr': '9B – Credit/debit notes (registered)', '9B_cdnur': '9B – Credit/debit notes (unregistered)' };
 
 const STATUS: Record<string, [string, 'accent' | 'warn' | 'neg' | 'info']> = {
   matched: ['Matched', 'accent'], mismatch: ['Amount differs', 'warn'], probable: ['Probable match', 'info'], missing_in_2b: ['Not in GSTR-2B', 'neg'], missing_in_books: ['Not in books', 'warn'],
@@ -321,7 +327,7 @@ function Recon() {
             <select className="input compact" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filter"><option value="all">All</option>{Object.entries(STATUS).map(([k, [l]]) => <option key={k} value={k}>{l}</option>)}</select>
             <button className="btn sm" onClick={() => csvOf('gstr2b-reconciliation.csv', ['Status', 'Supplier GSTIN', 'Invoice (books)', 'Invoice (2B)', 'Taxable (books)', 'Taxable (2B)', 'Tax (books)', 'Tax (2B)', 'Difference', 'Note'],
               res.rows.map((r) => [STATUS[r.status][0], (r.books ?? r.gstr2b)?.gstin, r.books?.number ?? '', r.gstr2b?.number ?? '', r.books?.taxable_value ?? '', r.gstr2b?.taxable_value ?? '', r.books?.tax ?? '', r.gstr2b?.tax ?? '', r.tax_difference, r.note]))}><Download size={13} />CSV</button></>}>
-            <div className="table-wrap" style={{ maxHeight: 460 }}><table className="data">
+            <div className="table-wrap" tabIndex={0} style={{ maxHeight: 460 }}><table className="data">
               <thead><tr><th>Status</th><th>Supplier GSTIN</th><th>Invoice (books / 2B)</th><th className="r">Tax (books)</th><th className="r">Tax (2B)</th><th>Note</th></tr></thead>
               <tbody>{rows.map((r, i) => (
                 <tr key={i}><td><Badge tone={STATUS[r.status][1]}>{STATUS[r.status][0]}</Badge></td><td className="mono" style={{ fontSize: 12 }}>{(r.books ?? r.gstr2b)?.gstin}</td>

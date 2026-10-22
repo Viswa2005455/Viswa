@@ -147,7 +147,7 @@ export function RedFlags() {
               {[r.beneish, ...r.altman].map((s) => <ScoreCard key={s.key} s={s} />)}
 
               <Card title={`Piotroski F-score · ${r.piotroski.period}`} subtitle={r.piotroski.verdict_text}>
-                <div className="table-wrap">
+                <div className="table-wrap" tabIndex={0}>
                   <table className="data">
                     <thead><tr><th>Test</th><th>Rule</th><th>Result</th><th>Detail</th></tr></thead>
                     <tbody>{r.piotroski.criteria.map((c) => (
@@ -186,7 +186,7 @@ function ScoreCard({ s }: { s: Score }) {
       <p style={{ fontSize: 13.5 }}>{s.verdict_text}</p>
       <Formula>{s.formula}</Formula>
       <p className="faint mt-sm" style={{ fontSize: 12.5 }}>{s.thresholds}</p>
-      <div className="table-wrap mt-sm">
+      <div className="table-wrap mt-sm" tabIndex={0}>
         <table className="data">
           <thead><tr><th>Part</th><th className="r">Value</th><th>Inputs</th></tr></thead>
           <tbody>{s.components.map((c) => (

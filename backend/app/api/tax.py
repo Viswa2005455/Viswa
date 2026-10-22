@@ -7,17 +7,20 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from ..auth.deps import current_user
 from ..auth.security import limiter
 from ..config import Settings, get_settings
 from ..db.models import User
-from ..finance import FinanceInputError, gst, incometax
 from ..files.registers import PURCHASE_TEMPLATE, SALES_TEMPLATE, read_register
+from ..finance import FinanceInputError, gst, incometax
+from .base import BaseModel
 from .finance import clean
 
 router = APIRouter(prefix="/api/tax", tags=["income tax"])
+# Only the assessment year whose rules were checked is accepted; anything else is refused, never estimated.
+AssessmentYear = Literal["2026-27"]
 gst_router = APIRouter(prefix="/api/gst", tags=["gst"])
 Money = Field(default=0.0, ge=0, le=1e13)
 
@@ -25,7 +28,7 @@ Money = Field(default=0.0, ge=0, le=1e13)
 # ---------------------------------------------------------------- income tax
 @router.get("/info")
 def info():
-    return {"year": incometax.YEAR, "sources": incometax.SOURCES, "filing_steps": incometax.FILING_STEPS,
+    return {"year": incometax.YEAR, "ruleset": incometax.RULESET, "sources": incometax.SOURCES, "filing_steps": incometax.FILING_STEPS,
             "filing_note": "Only an e-Return Intermediary registered with the Income Tax Department can submit returns through "
                            "its APIs. Use these figures on the e-filing portal or in the official offline utility."}
 
@@ -52,11 +55,13 @@ class ProfileIn(BaseModel):
     losses_to_carry_forward: bool = False
     files_under_139_4a_to_4d: bool = False
     claims_section_11: bool = False
+    accounts_audited: bool = False
+    assessment_year: AssessmentYear = "2026-27"
 
 
 @router.post("/itr-form")
 def itr_form(p: ProfileIn):
-    return incometax.select_itr(incometax.TaxpayerProfile(**p.model_dump()))
+    return incometax.select_itr(incometax.TaxpayerProfile(**p.model_dump(exclude={"assessment_year"})))
 
 
 class IndividualIn(BaseModel):
@@ -67,19 +72,22 @@ class IndividualIn(BaseModel):
     house_property: float = Field(default=0.0, ge=-1e13, le=1e13)
     business: float = Money
     other_sources: float = Money
+    dividends: float = Money
     stcg_111a: float = Money
     ltcg_112a: float = Money
     ltcg_112: float = Money
     winnings_115bb: float = Money
-    deductions_old: dict[Literal["80C", "80CCD(1B)", "80D", "80E", "80G", "80TTA", "80TTB", "other"], float] = Field(default_factory=dict)
+    deductions_old: dict[Literal["80C", "80CCC", "80CCD(1)", "80CCD(1B)", "80D", "80E", "80G", "80TTA", "80TTB", "other"],
+                         float] = Field(default_factory=dict)
     employer_nps_80ccd2: float = Money
     tds_and_advance_tax: float = Money
     count_special_income_for_rebate: bool = True
+    assessment_year: AssessmentYear = "2026-27"
 
 
 @router.post("/individual")
 def individual(req: IndividualIn):
-    return clean(incometax.individual_tax(incometax.IndividualIncome(**req.model_dump())))
+    return clean(incometax.individual_tax(incometax.IndividualIncome(**req.model_dump(exclude={"assessment_year"}))))
 
 
 class EntityIn(BaseModel):
@@ -90,11 +98,12 @@ class EntityIn(BaseModel):
     total_income_115baa: float | None = Field(default=None, ge=0, le=1e15)
     manufacturing_115bab_eligible: bool = False
     adjusted_total_income_amt: float | None = Field(default=None, ge=0, le=1e15)
+    assessment_year: AssessmentYear = "2026-27"
 
 
 @router.post("/entity")
 def entity(req: EntityIn):
-    return clean(incometax.entity_tax(incometax.EntityIncome(**req.model_dump())))
+    return clean(incometax.entity_tax(incometax.EntityIncome(**req.model_dump(exclude={"assessment_year"}))))
 
 
 class DueIn(BaseModel):
@@ -102,17 +111,20 @@ class DueIn(BaseModel):
     filing_date: dt.date | None = None
     total_income: float | None = Field(default=None, ge=0, le=1e15)
     tax_unpaid: float | None = Field(default=None, ge=0, le=1e15)
+    regime: Literal["new", "old"] = "new"
+    age: Literal["below_60", "60_to_79", "80_plus"] = "below_60"
+    resident: bool = True
 
 
 @router.post("/due-dates")
 def due(req: DueIn):
-    return incometax.due_dates(req.category, req.filing_date, req.total_income, req.tax_unpaid)
+    return incometax.due_dates(req.category, req.filing_date, req.total_income, req.tax_unpaid, req.regime, req.age, req.resident)
 
 
 # ---------------------------------------------------------------- GST
 @gst_router.get("/info")
 def gst_info():
-    return {"states": gst.STATES, "sources": gst.SOURCES, "filing_steps": gst.FILING_STEPS,
+    return {"states": gst.STATES, "ruleset": gst.RULESET, "sources": gst.SOURCES, "filing_steps": gst.FILING_STEPS,
             "filing_note": "Filing through software needs a licensed GST Suvidha Provider and the taxpayer's API consent. "
                            "Use these figures on the GST portal, or the Returns Offline Tool for GSTR-1."}
 
@@ -121,7 +133,7 @@ class GSTProfileIn(BaseModel):
     registration: Literal["regular", "composition", "non_resident", "oidar", "isd", "tds_deductor", "tcs_operator", "uin",
                           "not_registered"] = "regular"
     state_code: str = Field(default="27", min_length=1, max_length=2)
-    aggregate_turnover_prev_fy: float = Money
+    aggregate_turnover_prev_fy: float = Field(ge=0, le=1e15)  # required: it decides QRMP, GSTR-9/9C and thresholds
     aggregate_turnover_current_fy: float | None = Field(default=None, ge=0, le=1e15)
     supplies: Literal["goods", "services", "both"] = "goods"
     composition_kind: Literal["trader", "manufacturer", "restaurant", "services"] = "trader"
@@ -151,6 +163,7 @@ class GSTR3BIn(BaseModel):
     opening_credit: HeadsIn = HeadsIn()
     taxable_value_month: float | None = Field(default=None, ge=0, le=1e15)
     rule_86b_applies: bool = False
+    rule_86b_exempt: bool = False
     filing_date: dt.date | None = None
     due_date: dt.date | None = None
     nil_return: bool = False
@@ -199,9 +212,10 @@ def _purchase(r: dict) -> gst.Purchase:
 @gst_router.post("/gstr1")
 async def gstr1(file: UploadFile = File(...), supplier_gstin: str = Form(..., max_length=15),
                 aggregate_turnover: float | None = Form(default=None, ge=0, le=1e15),
+                period: str | None = Form(default=None, max_length=7),
                 settings: Settings = Depends(get_settings), user: User = Depends(current_user)):
     reg = await _register(file, settings, user)
-    out = gst.gstr1([_invoice(r) for r in reg["rows"]], supplier_gstin, aggregate_turnover)
+    out = gst.gstr1([_invoice(r) for r in reg["rows"]], supplier_gstin, aggregate_turnover, period or None)
     out["file"] = {"name": file.filename, "sheet": reg["sheet"], "columns": reg["columns"], "rows": len(reg["rows"]), "skipped": reg["skipped"]}
     return clean(out)
 

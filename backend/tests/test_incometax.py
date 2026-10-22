@@ -111,5 +111,70 @@ def test_due_dates_fee_and_interest():
     late = r["late_filing"]
     assert late["late"] and late["fee_234f"] == 5_000 and late["interest_months"] == 2 and late["interest_234a"] == 200
     assert due_dates("no_business", dt.date(2026, 7, 31), total_income=900_000)["late_filing"]["late"] is False
-    assert due_dates("no_business", dt.date(2026, 8, 5), total_income=400_000)["late_filing"]["fee_234f"] == 1_000
+    # 234F applies only above the basic exemption of the taxpayer's regime and age
+    assert due_dates("no_business", dt.date(2026, 8, 5), total_income=400_000)["late_filing"]["fee_234f"] == 0
+    assert due_dates("no_business", dt.date(2026, 8, 5), total_income=450_000)["late_filing"]["fee_234f"] == 1_000
+    assert due_dates("no_business", dt.date(2026, 8, 5), total_income=300_000, regime="old")["late_filing"]["fee_234f"] == 1_000
+    assert due_dates("no_business", dt.date(2026, 8, 5), total_income=450_000, regime="old", age="80_plus")["late_filing"]["fee_234f"] == 0
+    # Rule 119A: 234A interest on unpaid tax rounded down to a multiple of 100
+    assert due_dates("no_business", dt.date(2026, 8, 20), total_income=900_000, tax_unpaid=10_050)["late_filing"]["interest_234a"] == 100
     assert due_dates("audit", dt.date(2027, 1, 5), total_income=1)["late_filing"]["allowed"] is False
+
+
+
+# Independent hand computations (tax audit, 22 Oct 2026). Income is entered as "other sources" so no
+# standard deduction applies; expected values are worked from the slab tables, surcharge rules and 4% cess.
+@pytest.mark.parametrize("regime,income,expected", [
+    ("new", 2_400_000, 312_000),        # 20k + 40k + 60k + 80k + 1L = 3,00,000 x 1.04
+    ("new", 5_000_000, 1_123_200),      # 10,80,000 x 1.04
+    ("new", 5_000_010, 1_123_210),      # surcharge marginal relief at 50 lakh
+    ("new", 10_000_010, 2_951_530),     # marginal relief at 1 crore (10% -> 15%)
+    ("new", 20_000_010, 6_673_690),     # marginal relief at 2 crore (15% -> 25%)
+    ("new", 50_000_010, 18_954_000),    # 25% cap in the new regime
+    ("new", 60_000_000, 22_854_000),
+    ("old", 50_000_010, 19_256_260),    # marginal relief at 5 crore (25% -> 37%)
+    ("old", 60_000_000, 25_379_250),
+    ("new", 2_400_015, 312_010),        # s.288A: total income 24,00,020 -> slab tax 3,00,006 -> 3,12,006.24 -> 3,12,010
+])
+def test_known_answers(regime, income, expected):
+    assert individual_tax(IndividualIncome(other_sources=income))[regime]["total_tax"] == expected
+
+
+def test_senior_and_non_resident_old_regime():
+    assert individual_tax(IndividualIncome(age="60_to_79", other_sources=1_000_000))["old"]["total_tax"] == 114_400
+    assert individual_tax(IndividualIncome(age="80_plus", other_sources=1_000_000))["old"]["total_tax"] == 104_000
+    assert individual_tax(IndividualIncome(age="60_to_79", resident=False, other_sources=500_000))["old"]["total_tax"] == 13_000
+
+
+def test_enhanced_surcharge_excludes_capital_gains_and_dividends():
+    # slab 1.5 cr + 111A 1 cr: income excluding gains is below 2 cr, so 15% (not 25%) applies
+    r = individual_tax(IndividualIncome(other_sources=15_000_000, stcg_111a=10_000_000))
+    assert r["old"]["surcharge_rate"] == 0.15 and r["old"]["total_tax"] == 7_549_750   # (43,12,500 + 20,00,000) x 1.15 x 1.04
+    assert r["new"]["total_tax"] == 7_271_680                                          # (40,80,000 + 20,00,000) x 1.15 x 1.04
+    # slab 3 cr + 112 gains 3 cr: 25% on slab tax, 15% cap on the gains (old regime)
+    r = individual_tax(IndividualIncome(other_sources=30_000_000, ltcg_112=30_000_000))
+    assert r["old"]["surcharge_rate"] == 0.25 and r["old"]["total_tax"] == 15_941_250
+    # dividends of 3 cr alone: 15%, not 25%
+    r = individual_tax(IndividualIncome(dividends=30_000_000))
+    assert r["old"]["surcharge_rate"] == 0.15 and r["old"]["total_tax"] == 10_539_750    # (1,12,500 + 30% x 2.9 cr = 88,12,500) x 1.15 x 1.04
+
+
+def test_deduction_caps_80cce_80ccd2_80tta():
+    r = individual_tax(IndividualIncome(salary=2_000_000, other_sources=4_000, deductions_old={"80C": 150_000, "80CCC": 100_000, "80TTA": 10_000}))
+    d = r["old"]["deductions"]
+    assert d["80C"] + d.get("80CCC", 0) == 150_000 and d["80TTA"] == 4_000
+    r = individual_tax(IndividualIncome(salary=1_200_000, employer_nps_80ccd2=1_000_000))
+    assert r["new"]["deductions"]["80CCD(2)"] == pytest.approx(168_000) and r["old"]["deductions"]["80CCD(2)"] == pytest.approx(120_000)
+
+
+def test_entity_rounding_amt_surcharge_and_audit_due_date():
+    r = entity_tax(EntityIncome(entity="cooperative", total_income=1, adjusted_total_income_amt=50_000_000))
+    assert r["options"][0]["amt"]["total"] == 8_346_000      # 75,00,000 x 1.07 x 1.04
+    assert entity_tax(EntityIncome(entity="firm", total_income=1_000_004))["total_income"] == 1_000_000
+    p = TaxpayerProfile(total_income=50_000_000, business_income=True, accounts_audited=True)
+    assert select_itr(p)["due_date_category"] == "audit"
+    assert "ruleset" in select_itr(p) and individual_tax(IndividualIncome())["ruleset"]["id"] == "IN-ITA1961-AY2026-27"
+
+
+def test_other_assessment_years_are_refused(client):
+    assert client.post("/api/tax/individual", json={"salary": 1, "assessment_year": "2025-26"}).status_code == 422

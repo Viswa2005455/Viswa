@@ -99,7 +99,7 @@ export function ModelCheck() {
               ) : (
                 <Card title={`Issues in ${report.name}`} subtitle={Object.entries(report.counts).map(([k, n]) => `${CATEGORY_LABEL[k] ?? k}: ${n}`).join(' · ')}
                   actions={<Tabs label="Severity" value={filter} onChange={setFilter} options={[{ value: 'all', label: 'All' }, { value: 'high', label: 'High' }, { value: 'medium', label: 'Medium' }, { value: 'low', label: 'Low' }]} />}>
-                  <div className="table-wrap" style={{ maxHeight: 560 }}>
+                  <div className="table-wrap" tabIndex={0} style={{ maxHeight: 560 }}>
                     <table className="data">
                       <thead><tr><th>Severity</th><th>Where</th><th>Problem</th><th>What to do</th></tr></thead>
                       <tbody>{shown.map((i, n) => (

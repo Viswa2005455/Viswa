@@ -7,9 +7,10 @@ from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from ..finance import budgeting, cashflow, statements
+from .base import BaseModel
 from .finance import clean
 
 router = APIRouter(prefix="/api/finance", tags=["planning"])

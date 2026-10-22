@@ -6,7 +6,7 @@ import json
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import Field
 from sqlalchemy.orm import Session
 
 from ..ai import assistant
@@ -16,6 +16,7 @@ from ..auth.security import limiter
 from ..config import Settings, get_settings
 from ..db.models import User
 from ..db.session import get_db
+from .base import BaseModel
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 MAX_ATTACHMENT_BYTES = 300_000

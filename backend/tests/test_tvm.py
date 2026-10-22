@@ -107,3 +107,30 @@ def test_eaa_reproduces_npv_as_annuity():
 
 def test_eaa_zero_rate():
     assert tvm.equivalent_annual_annuity(0, [-90, 50, 50, 50]) == pytest.approx(20)
+
+
+# Independent hand-calculated answers for the payback and IRR edge cases (v0.12 audit).
+@pytest.mark.parametrize("flows, expected", [
+    ([0, -100, 50, 80], 2.625),          # cumulative 0, -100, -50, 30 -> 2 + 50/80
+    ([100, -300, 150, 200], 2.25),       # cumulative 100, -200, -50, 150 -> 2 + 50/200
+])
+def test_payback_measured_from_first_negative_cumulative(flows, expected):
+    assert tvm.payback_period(flows).period == pytest.approx(expected)
+
+
+def test_discounted_payback_when_cf0_is_zero():
+    # PVs at 10%: 0, -90.9091, 49.5868, 52.5920 -> 2 + 41.3223/52.5920 = 2.7857
+    assert tvm.discounted_payback_period(0.10, [0, -100, 60, 70]).period == pytest.approx(2.7857, abs=1e-4)
+
+
+def test_irr_finds_double_root():
+    # -1000(1+r)^2 + 2246.9134(1+r) - 1262.15496 = 0 touches zero at 1+r = 2246.9134/2000 without crossing
+    r = tvm.irr([-1000, 2246.9134, -1262.15496])
+    assert r.irrs and r.irrs[0] == pytest.approx(0.1234567, abs=1e-5)
+
+
+def test_irr_finds_roots_closer_than_grid_step():
+    # 1000y^2 - 2200.5y + 1210.55004 = 0 with y = 1+r -> y = (2200.5 +/- 0.3)/2000 = 1.1001, 1.1004
+    r = tvm.irr([-1000, 2200.5, -1210.55004])
+    assert r.status == "multiple"
+    assert r.irrs == pytest.approx([0.1001, 0.1004], abs=1e-6)

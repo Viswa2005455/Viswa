@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 from . import FinanceInputError
-from .dcf import OUTPUTS, DCFInputs, get_variable, run_dcf, set_variable
+from .dcf import OUTPUTS, DCFInputs, check_variable, get_variable, run_dcf, set_variable
 
 
 @dataclass
@@ -61,7 +61,12 @@ def tornado(base: DCFInputs, ranges: dict[str, tuple[float, float]], output: str
     base_out = _output(base, output)
     bars: list[TornadoBar] = []
     for var, (lo, hi) in ranges.items():
-        base_in = get_variable(base, var)
+        try:
+            check_variable(base, var)
+            base_in = get_variable(base, var)
+        except FinanceInputError as e:  # one unusable assumption fails its own bar, not the whole chart
+            bars.append(TornadoBar(var, None, lo, hi, None, None, 0.0, str(e)))
+            continue
         outs: list[float | None] = []
         err = None
         for v in (lo, hi):
@@ -97,25 +102,43 @@ def apply_scenario(base: DCFInputs, s: ScenarioDef) -> DCFInputs:
 
 
 def break_even(base: DCFInputs, var: str, output: str, target: float, low: float, high: float) -> float | None:
-    """Value of `var` in [low, high] at which `output` equals `target` (bisection on the full model)."""
-    def f(x: float) -> float:
-        out = _output(set_variable(base, var, x), output)
-        if out is None:
-            raise FinanceInputError("Output is undefined for this model.")
-        return out - target
+    """Value of `var` in [low, high] at which `output` equals `target` (bisection on the full model).
+    Points where the model is invalid (e.g. WACC at or below terminal growth) are skipped, so an
+    invalid end of the range does not hide a solution inside it."""
+    check_variable(base, var)
 
-    f_lo, f_hi = f(low), f(high)
-    if f_lo == 0:
-        return low
-    if f_lo * f_hi > 0:
-        return None
+    def f(x: float) -> float | None:
+        try:
+            out = _output(set_variable(base, var, x), output)
+        except FinanceInputError:
+            return None
+        return None if out is None else out - target
+
+    grid = [low + (high - low) * i / 200 for i in range(201)]
+    vals = [f(x) for x in grid]
+    if all(v is None for v in vals):
+        raise FinanceInputError("The model is invalid across the whole search range.")
+    bracket = None
+    for (x0, v0), (x1, v1) in zip(zip(grid, vals), zip(grid[1:], vals[1:])):
+        if v0 is None or v1 is None:
+            continue
+        if v0 == 0:
+            return x0
+        if v0 * v1 < 0:
+            bracket = (x0, v0, x1, v1)
+            break
+    if bracket is None:
+        return grid[-1] if vals[-1] == 0 else None
+    low, f_lo, high, _ = bracket
     for _ in range(200):
         mid = (low + high) / 2
         f_mid = f(mid)
+        if f_mid is None:
+            raise FinanceInputError("The model is invalid between two valid points of the search range.")
         if abs(f_mid) < 1e-9 or (high - low) < 1e-12:
             return mid
         if f_lo * f_mid < 0:
-            high, f_hi = mid, f_mid
+            high = mid
         else:
             low, f_lo = mid, f_mid
     return (low + high) / 2

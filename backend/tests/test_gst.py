@@ -131,7 +131,8 @@ def test_tax_api(client):
     assert client.post("/api/tax/itr-form", json={"total_income": 900_000}).json()["form"] == "ITR-1"
     assert client.post("/api/tax/entity", json={"entity": "company", "total_income": 1e6}).status_code == 422
     assert client.post("/api/tax/due-dates", json={"category": "audit", "filing_date": "2026-11-25", "total_income": 1e6}).json()["late_filing"]["fee_234f"] == 5000
-    assert client.post("/api/gst/returns", json={"state_code": "27", "month": 9}).status_code == 200
+    assert client.post("/api/gst/returns", json={"state_code": "27", "month": 9}).status_code == 422  # turnover is required
+    assert client.post("/api/gst/returns", json={"state_code": "27", "month": 9, "aggregate_turnover_prev_fy": 1e7}).status_code == 200
     r = client.post("/api/gst/gstr3b", json={"outward_tax": {"igst": 100}, "itc_available": {"igst": 40}})
     assert r.json()["total_cash"] == 60
     r = client.post("/api/gst/gstr1", data={"supplier_gstin": OWN}, files={"file": ("sales.csv", SALES_TEMPLATE.encode(), "text/csv")})
@@ -147,3 +148,39 @@ def test_tax_api(client):
 def test_tax_api_requires_sign_in(anon_client):
     assert anon_client.post("/api/tax/individual", json={}).status_code == 401
     assert anon_client.post("/api/gst/gstr3b", json={}).status_code == 401
+
+
+
+def test_rule_86b_covers_every_credit_head_and_can_be_switched_off():
+    for liab, credit in ((Heads(igst=1000), Heads(cgst=5000)), (Heads(igst=1000), Heads(sgst=5000)), (Heads(cess=1000), Heads(cess=5000))):
+        r = gstr3b(GSTR3BIn(outward_tax=liab, itc_available=credit, taxable_value_month=6e6))
+        assert r["total_cash"] == pytest.approx(10)   # 1% of output tax in cash
+    r = gstr3b(GSTR3BIn(outward_tax=Heads(igst=1000), itc_available=Heads(igst=5000), taxable_value_month=6e6, rule_86b_exempt=True))
+    assert r["total_cash"] == 0
+
+
+def test_gstr1_notes_exports_deemed_and_period_rules():
+    inv = [Invoice(number="B1", place_of_supply="27", taxable_value=500_000, rate=18, hsn="8471"),
+           Invoice(number="C1", doc_type="credit_note", place_of_supply="27", taxable_value=10_000, rate=18, hsn="8471"),
+           Invoice(number="E1", category="export_without_payment", place_of_supply="96", taxable_value=200_000, rate=18, hsn="8471"),
+           Invoice(number="E2", category="export_with_payment", taxable_value=100_000, rate=18, hsn="8471"),
+           Invoice(number="D1", gstin=OWN, category="deemed_export", taxable_value=50_000, rate=18, hsn="8471"),
+           Invoice(number="L1", place_of_supply="29", taxable_value=200_000, rate=18, hsn="8471")]
+    out = gstr1(inv, OWN, aggregate_turnover=1e7, period="2026-09")
+    b2cs = out["tables"]["b2cs"][0]
+    assert b2cs["taxable_value"] == 490_000 and out["tables"]["cdnur"] == []      # small B2C credit note netted in Table 7
+    assert {r["number"] for r in out["tables"]["exp"]} == {"E1", "E2"} and out["tables"]["exp"][0]["place_of_supply"] == "96"
+    assert out["summary"]["6C_deemed_exports"]["count"] == 1 and out["summary"]["6B_sez"]["count"] == 0
+    assert [r["number"] for r in out["tables"]["b2cl"]] == ["L1"]
+    # before August 2024 the B2CL limit was 2.5 lakh, so a 2.36 lakh inter-state invoice is B2C small
+    old = gstr1(inv, OWN, aggregate_turnover=1e7, period="2024-06")
+    assert old["b2cl_limit"] == 250_000 and old["tables"]["b2cl"] == []
+    assert "ruleset" in out and any("4-digit HSN" in n for n in gstr1(inv[:1], OWN)["notes"])
+    with pytest.raises(FinanceInputError):
+        gstr1(inv, OWN, period="2016-01")
+
+
+def test_gstr4_due_date_by_year_and_late_fee_note():
+    r = forms(select_returns(GSTProfile(registration="composition", aggregate_turnover_prev_fy=5e6, year=2023, month=9)))
+    assert r["GSTR-4"]["next_due"] == "2024-04-30"
+    assert "note" in late_fee_per_return(10, False, None)

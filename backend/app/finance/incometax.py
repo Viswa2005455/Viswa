@@ -26,6 +26,11 @@ from dataclasses import asdict, dataclass, field
 from . import FinanceInputError
 
 YEAR = {"financial_year": "2025-26", "assessment_year": "2026-27", "law": "Income-tax Act, 1961"}
+# Every result carries the rule set it was computed with, so a later rule change cannot silently
+# alter a saved computation. Only this assessment year is supported; others are refused.
+RULESET = {"id": "IN-ITA1961-AY2026-27", "version": "2026.10.2", "rules_checked_on": "2026-10-22",
+           "status": "Rates, slabs, rebate, surcharge, cess and rounding checked against incometaxindia.gov.in; see notes for open interpretations."}
+SUPPORTED_AY = "2026-27"
 
 SOURCES = {
     "rates": "https://www.incometaxindia.gov.in/w/tax-rates%E2%80%8B",
@@ -58,12 +63,13 @@ NEW_SLABS = [(4 * LAKH, 0.0), (8 * LAKH, 0.05), (12 * LAKH, 0.10), (16 * LAKH, 0
 OLD_EXEMPTION = {"below_60": 2.5 * LAKH, "60_to_79": 3 * LAKH, "80_plus": 5 * LAKH}
 STANDARD_DEDUCTION = {"new": 75_000, "old": 50_000}
 REBATE = {"new": (12 * LAKH, 60_000), "old": (5 * LAKH, 12_500)}  # (income limit, maximum rebate)
-SURCHARGE_INDIVIDUAL = [(50 * LAKH, 0.10), (1 * CRORE, 0.15), (2 * CRORE, 0.25), (5 * CRORE, 0.37)]
 SPECIAL_SURCHARGE_CAP = 0.15  # dividends and gains under 111A / 112 / 112A
 NEW_REGIME_SURCHARGE_CAP = 0.25
 LTCG_112A_EXEMPT = 1.25 * LAKH
 RATE_111A, RATE_112A, RATE_112, RATE_115BB = 0.20, 0.125, 0.125, 0.30
-CAPS_OLD = {"80C": 150_000, "80CCD(1B)": 50_000, "80TTA": 10_000, "80TTB": 50_000}
+CAPS_OLD = {"80C": 150_000, "80CCC": 150_000, "80CCD(1)": 150_000, "80CCD(1B)": 50_000, "80TTA": 10_000, "80TTB": 50_000}
+CAP_80CCE = 150_000  # 80C + 80CCC + 80CCD(1) together
+CAP_80CCD2 = {"new": 0.14, "old": 0.10}  # employer NPS, share of salary (the law uses basic + DA)
 HP_LOSS_SETOFF_CAP = 2 * LAKH  # s.71(3A), old regime
 
 
@@ -123,6 +129,7 @@ class TaxpayerProfile:
     esop_tax_deferred: bool = False
     losses_to_carry_forward: bool = False
     files_under_139_4a_to_4d: bool = False  # charitable/religious trusts, political parties, research bodies, universities
+    accounts_audited: bool = False  # tax audit (s.44AB) or other audit, or a working partner of an audited firm
     claims_section_11: bool = False
 
 
@@ -137,7 +144,7 @@ def select_itr(p: TaxpayerProfile) -> dict:
     excluded: list[dict] = []
 
     def out(form: str, name: str, src: str) -> dict:
-        return {"form": form, "name": name, "reasons": reasons, "simpler_forms_excluded": excluded,
+        return {"form": form, "name": name, "reasons": reasons, "simpler_forms_excluded": excluded, "ruleset": RULESET,
                 "due_date_category": _due_category(p, form), "source": SOURCES[src], "year": YEAR,
                 "note": "Check the form's instructions on the e-filing portal before filing; eligibility rules change each year."}
 
@@ -223,7 +230,7 @@ def select_itr(p: TaxpayerProfile) -> dict:
 
 
 def _due_category(p: TaxpayerProfile, form: str) -> str:
-    if p.taxpayer_type == "company" or form in ("ITR-6", "ITR-7"):
+    if p.taxpayer_type == "company" or form in ("ITR-6", "ITR-7") or p.accounts_audited:
         return "audit"
     if p.business_income or p.partner_remuneration or form in ("ITR-3", "ITR-4", "ITR-5"):
         return "business_no_audit"
@@ -239,7 +246,8 @@ class IndividualIncome:
     salary: float = 0.0  # gross salary / pension after exempt allowances
     house_property: float = 0.0  # net income from house property (negative = loss)
     business: float = 0.0
-    other_sources: float = 0.0  # interest, dividends, family pension etc. taxed at slab rates
+    other_sources: float = 0.0  # interest, family pension etc. taxed at slab rates
+    dividends: float = 0.0  # taxed at slab rates; excluded from the 25%/37% surcharge test and capped at 15% surcharge
     stcg_111a: float = 0.0
     ltcg_112a: float = 0.0  # before the ₹1.25 lakh exemption
     ltcg_112: float = 0.0  # other long-term gains at 12.5% without indexation
@@ -276,12 +284,25 @@ def _special_taxes(inc: IndividualIncome, unused_exemption: float) -> tuple[dict
     return rows, sum(used.values())
 
 
-def _surcharge_rate(total_income: float, regime: str) -> float:
-    rate = 0.0
-    for threshold, r in SURCHARGE_INDIVIDUAL:
-        if total_income > threshold:
-            rate = r
-    return min(rate, NEW_REGIME_SURCHARGE_CAP) if regime == "new" else rate
+def _surcharge_rate(total_income: float, excl_income: float, regime: str) -> tuple[float, float | None, str]:
+    """Surcharge for individuals / HUF (Part I of the First Schedule, Finance Act 2025):
+    the 25% and 37% tiers apply only when income EXCLUDING dividends and 111A/112/112A gains
+    exceeds ₹2 crore / ₹5 crore; otherwise the rate stays 15% above ₹1 crore. The new regime caps it at 25%.
+    Returns (rate, threshold crossed, which income measure the threshold applies to)."""
+    if excl_income > 5 * CRORE:
+        rate, t, m = 0.37, 5 * CRORE, "excl"
+    elif excl_income > 2 * CRORE:
+        rate, t, m = 0.25, 2 * CRORE, "excl"
+    elif total_income > 1 * CRORE:
+        rate, t, m = 0.15, 1 * CRORE, "total"
+    elif total_income > 50 * LAKH:
+        rate, t, m = 0.10, 50 * LAKH, "total"
+    else:
+        return 0.0, None, "total"
+    if regime == "new" and rate > NEW_REGIME_SURCHARGE_CAP:
+        rate = NEW_REGIME_SURCHARGE_CAP
+        t, m = (2 * CRORE, "excl")  # the 25% step is the last one that changes the rate
+    return rate, t, m
 
 
 def _regime(inc: IndividualIncome, regime: str) -> dict:
@@ -296,7 +317,7 @@ def _regime(inc: IndividualIncome, regime: str) -> dict:
         elif -hp > HP_LOSS_SETOFF_CAP:
             notes.append("Old regime: house-property loss set off against other income is limited to ₹2 lakh (s.71(3A)); the rest is carried forward.")
             hp = -HP_LOSS_SETOFF_CAP
-    gross_normal = max(0.0, salary_income + hp + inc.business + inc.other_sources)
+    gross_normal = max(0.0, salary_income + hp + inc.business + inc.other_sources + inc.dividends)
 
     deductions: dict[str, float] = {}
     if regime == "old":
@@ -305,19 +326,39 @@ def _regime(inc: IndividualIncome, regime: str) -> dict:
             if k in d and d[k] > cap:
                 notes.append(f"Section {k} is limited to ₹{cap:,.0f}.")
                 d[k] = cap
-        if inc.age != "below_60" and inc.resident:
-            if "80TTA" in d:
-                notes.append("Senior citizens claim interest under 80TTB, not 80TTA.")
-                d.pop("80TTA")
-        elif "80TTB" in d:
+        cce = sum(d.get(k, 0.0) for k in ("80C", "80CCC", "80CCD(1)"))
+        if cce > CAP_80CCE:
+            notes.append(f"80C, 80CCC and 80CCD(1) together are limited to ₹{CAP_80CCE:,.0f} (section 80CCE).")
+            over = cce - CAP_80CCE
+            for k in ("80CCD(1)", "80CCC", "80C"):
+                cut = min(over, d.get(k, 0.0))
+                if cut:
+                    d[k] -= cut
+                    over -= cut
+        senior = inc.age != "below_60" and inc.resident and inc.taxpayer_type == "individual"
+        if senior and "80TTA" in d:
+            notes.append("Senior citizens claim interest under 80TTB, not 80TTA.")
+            d.pop("80TTA")
+        if not senior and "80TTB" in d:
             notes.append("80TTB is only for resident senior citizens.")
             d.pop("80TTB")
-        deductions.update(d)
+        for k in ("80TTA", "80TTB"):
+            if k in d and d[k] > inc.other_sources:
+                notes.append(f"{k} cannot exceed the interest income included in 'other sources'.")
+                d[k] = inc.other_sources
+        deductions.update({k: v for k, v in d.items() if v > 0})
     else:
-        if inc.deductions_old:
+        if any(v for v in (inc.deductions_old or {}).values()):
             notes.append("New regime: Chapter VI-A deductions such as 80C, 80D and 80TTA are not allowed (only 80CCD(2) and a few others).")
     if inc.employer_nps_80ccd2:
-        deductions["80CCD(2)"] = _nn("Employer NPS contribution", inc.employer_nps_80ccd2)
+        nps = _nn("Employer NPS contribution", inc.employer_nps_80ccd2)
+        cap = CAP_80CCD2[regime] * inc.salary
+        if nps > cap:
+            notes.append(f"80CCD(2) is limited to {CAP_80CCD2[regime]:.0%} of salary in the {regime} regime (the law measures basic + DA; "
+                         "the salary entered is used as the upper bound).")
+            nps = cap
+        if nps > 0:
+            deductions["80CCD(2)"] = nps
     claimed = sum(deductions.values())
     allowed = min(claimed, gross_normal)  # Chapter VI-A deductions cannot exceed the slab-rate income
     if claimed > allowed:
@@ -326,6 +367,9 @@ def _regime(inc: IndividualIncome, regime: str) -> dict:
 
     special_income = inc.stcg_111a + inc.ltcg_112a + inc.ltcg_112 + inc.winnings_115bb
     total_income = round10(normal_income + special_income)
+    # s.288A: tax is computed on the rounded total income; the rounding difference sits in slab income
+    normal_income = max(0.0, total_income - special_income)
+    dividends = min(inc.dividends, normal_income)
 
     if regime == "new":
         slabs = NEW_SLABS
@@ -355,37 +399,53 @@ def _regime(inc: IndividualIncome, regime: str) -> dict:
                 rebate = min(normal_tax + special["111A"]["tax"] + special["112"]["tax"], max_rebate)  # not against 112A (s.112A(6))
     tax_after_rebate = max(0.0, normal_tax + special_tax - rebate)
 
-    # surcharge (on tax after rebate); 15% cap on 111A / 112 / 112A tax; marginal relief at each threshold
-    def tax_and_surcharge(norm_inc: float, specials: dict, total: float) -> float:
-        n_tax, _ = slab_tax(norm_inc, slabs)
-        sp_capped = specials["111A"]["tax"] + specials["112"]["tax"] + specials["112A"]["tax"]
-        other = n_tax + specials["115BB"]["tax"]
-        rate = _surcharge_rate(total, regime)
-        return other * (1 + rate) + sp_capped * (1 + min(rate, SPECIAL_SURCHARGE_CAP))
+    def liability(norm: float, div: float, specials: dict, total: float, excl: float) -> tuple[float, float, float]:
+        """(tax before surcharge, surcharge, rate). Dividend tax is the slab tax the dividends add;
+        it and the 111A/112/112A tax carry at most 15% surcharge."""
+        n_tax = slab_tax(norm, slabs)[0]
+        div_tax = n_tax - slab_tax(norm - div, slabs)[0] if div > 0 else 0.0
+        capped = div_tax + specials["111A"]["tax"] + specials["112"]["tax"] + specials["112A"]["tax"]
+        other = n_tax - div_tax + specials["115BB"]["tax"]
+        r, _, _ = _surcharge_rate(total, excl, regime)
+        return n_tax + sum(x["tax"] for x in specials.values()), other * r + capped * min(r, SPECIAL_SURCHARGE_CAP), r
 
-    rate = _surcharge_rate(total_income, regime)
-    capped_part = special["111A"]["tax"] + special["112"]["tax"] + special["112A"]["tax"]
+    excl_income = total_income - dividends - inc.stcg_111a - inc.ltcg_112a - inc.ltcg_112
+    rate, threshold, measure = _surcharge_rate(total_income, excl_income, regime)
     surcharge = 0.0
     marginal_relief = 0.0
-    if rate > 0:
-        other_part = max(0.0, tax_after_rebate - capped_part)
-        surcharge = other_part * rate + min(capped_part, tax_after_rebate) * min(rate, SPECIAL_SURCHARGE_CAP)
-        threshold = max(t for t, r in SURCHARGE_INDIVIDUAL if total_income > t)
-        excess = total_income - threshold
+    if rate > 0 and rebate == 0:
+        _, surcharge, _ = liability(normal_income, dividends, special, total_income, excl_income)
+        # marginal relief: tax + surcharge may not exceed the amount at the threshold plus the income above it
+        excess = (excl_income if measure == "excl" else total_income) - threshold
         reduced = IndividualIncome(**asdict(inc))
-        cut_normal = min(excess, normal_income)
-        rest = excess - cut_normal
-        for key in ("winnings_115bb", "ltcg_112", "ltcg_112a", "stcg_111a"):
-            take = min(rest, getattr(reduced, key))
-            setattr(reduced, key, getattr(reduced, key) - take)
+        norm_r, div_r = normal_income, dividends
+        cut = min(excess, norm_r - div_r)
+        norm_r -= cut
+        rest = excess - cut
+        order = ("winnings_115bb",) if measure == "excl" else ("winnings_115bb", "dividends", "ltcg_112", "ltcg_112a", "stcg_111a")
+        for key in order:
+            if rest <= 0:
+                break
+            if key == "dividends":
+                take = min(rest, div_r)
+                div_r -= take
+                norm_r -= take
+            else:
+                take = min(rest, getattr(reduced, key))
+                setattr(reduced, key, getattr(reduced, key) - take)
             rest -= take
-        sp_at_threshold, _ = _special_taxes(reduced, max(0.0, exemption - (normal_income - cut_normal)))
-        at_threshold = tax_and_surcharge(normal_income - cut_normal, sp_at_threshold, threshold)
-        limit_total = at_threshold + excess
+        sp_r, _ = _special_taxes(reduced, max(0.0, exemption - norm_r))
+        total_r = total_income - (excess - rest)
+        excl_r = total_r - div_r - reduced.stcg_111a - reduced.ltcg_112a - reduced.ltcg_112
+        base_r, sc_r, _ = liability(norm_r, div_r, sp_r, total_r, excl_r)
+        limit_total = base_r + sc_r + (excess - rest)
         if tax_after_rebate + surcharge > limit_total:
             marginal_relief = tax_after_rebate + surcharge - limit_total
             surcharge -= marginal_relief
             notes.append(f"Marginal relief on surcharge: tax plus surcharge cannot exceed the tax at ₹{threshold:,.0f} plus the income above it.")
+    if rate > 0 and (dividends or special_tax):
+        notes.append("Surcharge on dividends and on 111A / 112 / 112A gains is capped at 15%; the 25% and 37% rates are tested on "
+                     "income excluding them.")
     cess = (tax_after_rebate + surcharge) * CESS
     total_tax = round10(tax_after_rebate + surcharge + cess)
     paid = _nn("TDS and advance tax", inc.tds_and_advance_tax)
@@ -394,6 +454,7 @@ def _regime(inc: IndividualIncome, regime: str) -> dict:
         "deductions_allowed": allowed, "slab_income": normal_income, "special_income": special_income, "total_income": total_income,
         "slab_rows": slab_rows, "slab_tax": normal_tax, "special_rate_tax": special, "rebate_87a": rebate,
         "tax_after_rebate": tax_after_rebate, "surcharge_rate": rate, "surcharge": surcharge, "marginal_relief": marginal_relief,
+        "income_excluding_dividends_and_gains": excl_income, "dividends": dividends,
         "cess": cess, "total_tax": total_tax, "tds_and_advance_tax": paid, "balance": total_tax - paid,
         "effective_rate": total_tax / total_income if total_income else None, "notes": notes,
     }
@@ -404,19 +465,19 @@ def individual_tax(inc: IndividualIncome) -> dict:
         raise FinanceInputError("This calculator is for individuals and HUFs; use the entity calculator for firms and companies.")
     if inc.age not in OLD_EXEMPTION:
         raise FinanceInputError("Age must be below_60, 60_to_79 or 80_plus.")
-    for name in ("salary", "business", "other_sources", "stcg_111a", "ltcg_112a", "ltcg_112", "winnings_115bb"):
+    for name in ("salary", "business", "other_sources", "dividends", "stcg_111a", "ltcg_112a", "ltcg_112", "winnings_115bb"):
         _nn(name.replace("_", " ").capitalize(), getattr(inc, name))
     if not math.isfinite(inc.house_property):
         raise FinanceInputError("House property income must be a number.")
     new, old = _regime(inc, "new"), _regime(inc, "old")
     better = "new" if new["total_tax"] <= old["total_tax"] else "old"
     return {
-        "year": YEAR, "new": new, "old": old, "better_regime": better, "saving": abs(new["total_tax"] - old["total_tax"]),
+        "year": YEAR, "ruleset": RULESET, "new": new, "old": old, "better_regime": better, "saving": abs(new["total_tax"] - old["total_tax"]),
         "rebate_note": REBATE_NOTE,
         "notes": [
             "The new regime is the default; to choose the old regime a salaried person states it in the return, while a person "
             "with business income files Form 10-IEA by the due date.",
-            "Dividends are taxed at slab rates; their 15% surcharge cap is not modelled, so surcharge may be slightly overstated at high incomes.",
+            "Old-regime 87A rebate is not applied against tax on lottery / game winnings (115BB); this is the cautious reading.",
             "Interest under sections 234A/B/C and losses carried forward are not included.",
         ],
         "sources": {k: SOURCES[k] for k in ("rates", "rebate_old", "capital_gains")},
@@ -453,7 +514,7 @@ class EntityIncome:
 
 
 def entity_tax(e: EntityIncome) -> dict:
-    ti = _nn("Total income", e.total_income)
+    ti = round10(_nn("Total income", e.total_income))  # s.288A
     options: list[dict] = []
     notes: list[str] = []
 
@@ -485,8 +546,10 @@ def entity_tax(e: EntityIncome) -> dict:
                 normal["total_tax"] = mat_total
                 normal["effective_rate"] = mat_total / ti if ti else None
                 normal["label"] += " (MAT applies: 15% of book profit is higher)"
+        else:
+            notes.append("MAT (15% of book profit under section 115JB) was not checked: enter the book profit to include it.")
         options.append(normal)
-        ti_baa = ti if e.total_income_115baa is None else _nn("Total income under 115BAA", e.total_income_115baa)
+        ti_baa = ti if e.total_income_115baa is None else round10(_nn("Total income under 115BAA", e.total_income_115baa))
         base = ti_baa * 0.22
         options.append(option("115BAA", "Section 115BAA at 22% (no MAT)", base, 0.10, base * 0.10, 0.0, {"total_income": ti_baa}))
         if e.manufacturing_115bab_eligible:
@@ -504,8 +567,9 @@ def entity_tax(e: EntityIncome) -> dict:
         normal = option("normal", "Normal slabs (10% / 20% / 30%)", base, rate, sc, relief)
         if e.adjusted_total_income_amt is not None:
             ati = _nn("Adjusted total income", e.adjusted_total_income_amt)
-            amt = round10(ati * 0.15 * (1 + CESS))
-            normal["amt"] = {"adjusted_total_income": ati, "total": amt}
+            arate, asc, arelief, abase = _surcharge_with_relief(ati, lambda x: x * 0.15, [(1 * CRORE, 0.07), (10 * CRORE, 0.12)])
+            amt = round10((abase + asc) * (1 + CESS))
+            normal["amt"] = {"adjusted_total_income": ati, "tax": abase, "surcharge": asc, "marginal_relief": arelief, "total": amt}
             if amt > normal["total_tax"]:
                 normal["total_tax"] = amt
                 normal["label"] += " (AMT at 15% is higher)"
@@ -516,7 +580,8 @@ def entity_tax(e: EntityIncome) -> dict:
     else:
         raise FinanceInputError("Entity must be company, firm, llp or cooperative.")
     best = min(options, key=lambda o: o["total_tax"])
-    return {"year": YEAR, "entity": e.entity, "options": options, "lowest": best["code"], "notes": notes, "source": SOURCES["rates"]}
+    return {"year": YEAR, "ruleset": RULESET, "entity": e.entity, "total_income": ti, "options": options, "lowest": best["code"],
+            "notes": notes, "source": SOURCES["rates"]}
 
 
 # ---------------------------------------------------------------- due dates, 234F fee, 234A interest
@@ -541,11 +606,17 @@ def _months_or_part(start: dt.date, end: dt.date) -> int:
     return max(months, 1)
 
 
+def basic_exemption(regime: str = "new", age: str = "below_60", resident: bool = True) -> float:
+    if regime == "new":
+        return NEW_SLABS[0][0]
+    return OLD_EXEMPTION[age] if resident else OLD_EXEMPTION["below_60"]
+
+
 def due_dates(category: str | None = None, filing_date: dt.date | None = None, total_income: float | None = None,
-              tax_unpaid: float | None = None) -> dict:
+              tax_unpaid: float | None = None, regime: str = "new", age: str = "below_60", resident: bool = True) -> dict:
     rows = [{"category": k, "label": v["label"], "due_date": v["date"].isoformat(),
              "statutory_due_date": v.get("statutory", v["date"]).isoformat()} for k, v in DUE_DATES.items()]
-    out = {"year": YEAR, "due_dates": rows, "belated_return_last_date": BELATED_LAST.isoformat(),
+    out = {"year": YEAR, "ruleset": RULESET, "due_dates": rows, "belated_return_last_date": BELATED_LAST.isoformat(),
            "revised_return_last_date": REVISED_LAST.isoformat(),
            "updated_return": "ITR-U can be filed within 48 months from the end of the assessment year, with additional tax of 25% to 70% of tax and interest.",
            "notes": ["Revising a return more than 9 months after the year ends attracts a fee under section 234-I (₹1,000 if income up to ₹5 lakh, else ₹5,000).",
@@ -560,13 +631,16 @@ def due_dates(category: str | None = None, filing_date: dt.date | None = None, t
         if late:
             if total_income is None:
                 raise FinanceInputError("Enter total income to work out the late fee.")
-            # no fee for someone not required to file (income below the basic exemption limit)
-            fee = 0.0 if total_income <= 2.5 * LAKH else 1_000.0 if total_income <= 5 * LAKH else 5_000.0
+            # no fee for someone not required to file: income up to the basic exemption limit of their regime and age
+            # (other filing triggers in the seventh proviso to s.139(1), e.g. high deposits or foreign travel, are not checked)
+            exempt_limit = basic_exemption(regime, age, resident)
+            fee = 0.0 if total_income <= exempt_limit else 1_000.0 if total_income <= 5 * LAKH else 5_000.0
         interest = 0.0
         months = 0
         if late and tax_unpaid:
             months = _months_or_part(due + dt.timedelta(days=1), filing_date)
-            interest = _nn("Unpaid tax", tax_unpaid) * 0.01 * months
+            base = math.floor(_nn("Unpaid tax", tax_unpaid) / 100) * 100  # Rule 119A: rounded down to a multiple of ₹100
+            interest = base * 0.01 * months
         out["late_filing"] = {
             "due_date": due.isoformat(), "filing_date": filing_date.isoformat(), "late": late,
             "fee_234f": fee, "interest_234a": interest, "interest_months": months,

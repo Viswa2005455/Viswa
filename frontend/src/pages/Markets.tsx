@@ -190,7 +190,7 @@ function RiskView({ r }: { r: Risk }) {
         </Card>
       </div>
       <Card title="How the rating is scored" actions={<Badge tone={RATING_TONE[r.rating]}>{r.rating} risk · {r.score}/100</Badge>} subtitle="Each factor scores 0 (low risk) to 3 (very high); the total is scaled to 100. Low < 25 · Moderate < 50 · High < 75 · Very high">
-        <div className="table-wrap"><table className="data">
+        <div className="table-wrap" tabIndex={0}><table className="data">
           <thead><tr><th>Factor</th><th className="r">Value</th><th className="r">Points</th><th>Bands (0 / 1 / 2 / 3)</th></tr></thead>
           <tbody>{r.factors.map((f) => (
             <tr key={f.factor}><td>{f.factor}</td><td className="r">{typeof f.value === 'boolean' ? (f.value ? 'above' : 'below') : f.value === null ? '—' : f.factor.startsWith('Beta') ? fmtNum(f.value, 2) : fmtPct(f.value, 1)}</td>

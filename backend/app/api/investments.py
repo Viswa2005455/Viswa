@@ -5,10 +5,11 @@ from __future__ import annotations
 from typing import Literal
 
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from ..finance import FinanceInputError
 from ..finance import investments as inv
+from .base import BaseModel
 from .finance import clean
 
 router = APIRouter(prefix="/api/investments", tags=["investments"])

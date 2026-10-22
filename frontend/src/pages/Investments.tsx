@@ -94,7 +94,7 @@ function Bond({ m, set }: { m: Model; set: (p: Partial<Model>) => void }) {
           <Kpi label="Convexity · DV01" value={`${fmtNum(d.convexity, 2)} · ${fmtNum(d.dv01, 4)}`} />
         </div>
         <Card title={`Price change for ±${d.shock.bp} bp`} subtitle="Full repricing vs the duration and duration + convexity approximations">
-          <div className="table-wrap"><table className="data">
+          <div className="table-wrap" tabIndex={0}><table className="data">
             <thead><tr><th>Shock</th><th className="r">Actual</th><th className="r">Duration only</th><th className="r">Duration + convexity</th></tr></thead>
             <tbody>
               <tr><td>+{d.shock.bp} bp</td><td className="r">{fmtNum(d.shock.actual_up, 4)}</td><td className="r">{fmtNum(d.shock.duration_only_up, 4)}</td><td className="r">{fmtNum(d.shock.estimate_up, 4)}</td></tr>
@@ -149,7 +149,7 @@ function Equity({ m, set }: { m: Model; set: (p: Partial<Model>) => void }) {
           </Card>
         )}
         {(d.dividends || d.schedule) && (
-          <Card title="Forecast" flush><div className="table-wrap" style={{ border: 0, borderRadius: 0 }}><table className="data">
+          <Card title="Forecast" flush><div className="table-wrap" tabIndex={0} style={{ border: 0, borderRadius: 0 }}><table className="data">
             {d.dividends ? <><thead><tr><th>Year</th><th className="r">Dividend</th><th className="r">PV</th></tr></thead>
               <tbody>{d.dividends.map((x) => <tr key={x.year}><td>{x.year}</td><td className="r">{fmtNum(x.dividend, 4)}</td><td className="r">{fmtNum(x.pv, 4)}</td></tr>)}</tbody></>
               : <><thead><tr><th>Year</th><th className="r">Opening book</th><th className="r">Earnings</th><th className="r">Residual income</th><th className="r">PV</th></tr></thead>
@@ -179,7 +179,7 @@ function Portfolio({ m, set }: { m: Model; set: (p: Partial<Model>) => void }) {
   return (
     <div className="stack">
       <Card title="Assets" subtitle={`Weights sum to ${fmtPct(wsum, 1)}`} actions={<button className="btn sm" disabled={n >= 10} onClick={() => resize([...p.assets, { name: `Asset ${n + 1}`, weight: 0, ret: null, vol: null }])}><Plus size={14} />Asset</button>}>
-        <div className="table-wrap"><table className="data">
+        <div className="table-wrap" tabIndex={0}><table className="data">
           <thead><tr><th>Asset</th><th>Weight</th><th>Expected return</th><th>Volatility (σ)</th>{p.assets.map((a) => <th key={a.name}>ρ with {a.name}</th>)}<th /></tr></thead>
           <tbody>{p.assets.map((a, i) => (
             <tr key={i}>
@@ -231,7 +231,7 @@ function Portfolio({ m, set }: { m: Model; set: (p: Partial<Model>) => void }) {
 }
 
 interface PerfRes { annual_return: number; benchmark_return: number; volatility: number; beta: number | null; sharpe: number | null; treynor: number | null; jensens_alpha: number | null;
-  m_squared: number | null; tracking_error: number; information_ratio: number | null; sortino: number | null; max_drawdown: number; notes: string[] }
+  m_squared: number | null; m_squared_excess: number | null; tracking_error: number; information_ratio: number | null; sortino: number | null; max_drawdown: number; notes: string[] }
 function Performance({ m, set }: { m: Model; set: (p: Partial<Model>) => void }) {
   const p = m.performance;
   const u = (x: Partial<Model['performance']>) => set({ performance: { ...p, ...x } });
@@ -255,7 +255,7 @@ function Performance({ m, set }: { m: Model; set: (p: Partial<Model>) => void })
           <Kpi label="Max drawdown" value={fmtPct(d.max_drawdown, 1)} />
         </div>
         <Card title="Risk-adjusted measures">
-          {[['Treynor ratio', fmtNum(d.treynor, 4), '(Rp − Rf) / β'], ["Jensen's alpha", fmtPct(d.jensens_alpha, 2), 'Rp − [Rf + β(Rb − Rf)]'], ['M²', fmtPct(d.m_squared, 2), 'Sharpe × σb + Rf − Rb'],
+          {[['Treynor ratio', fmtNum(d.treynor, 4), '(Rp − Rf) / β'], ["Jensen's alpha", fmtPct(d.jensens_alpha, 2), 'Rp − [Rf + β(Rb − Rf)]'], ['M²', fmtPct(d.m_squared, 2), 'Rf + Sharpe × σb'], ['M² excess over benchmark', fmtPct(d.m_squared_excess, 2), 'M² − Rb'],
             ['Tracking error', fmtPct(d.tracking_error, 2), 'σ(Rp − Rb)'], ['Information ratio', fmtNum(d.information_ratio, 3), '(Rp − Rb) / tracking error']].map(([l, v, f]) => (
             <div key={l} className="metric-row"><span>{l} <span className="faint mono" style={{ fontSize: 11.5 }}>{f}</span></span><span className="v">{v}</span></div>))}
           {d.notes.map((n) => <p key={n} className="faint mt-sm" style={{ fontSize: 12.5 }}>{n}</p>)}
@@ -299,7 +299,7 @@ function Options({ m, set }: { m: Model; set: (p: Partial<Model>) => void }) {
             <Kpi label="American call (binomial)" value={fmtNum(d.binomial.american_call, 4)} />
           </div>
           <Card title="Greeks" subtitle={d.black_scholes.notes.join(' ')}>
-            <div className="table-wrap"><table className="data">
+            <div className="table-wrap" tabIndex={0}><table className="data">
               <thead><tr><th /><th className="r">Delta</th><th className="r">Gamma</th><th className="r">Vega</th><th className="r">Theta / day</th><th className="r">Rho</th></tr></thead>
               <tbody>{(['call', 'put'] as const).map((k) => <tr key={k}><td>{k}</td>{['delta', 'gamma', 'vega', 'theta', 'rho'].map((g) => <td key={g} className="r">{fmtNum(d.black_scholes.greeks[k][g], 4)}</td>)}</tr>)}</tbody>
             </table></div>
@@ -311,7 +311,7 @@ function Options({ m, set }: { m: Model; set: (p: Partial<Model>) => void }) {
       <Card title="Strategy payoff at expiry" subtitle="Profit including premiums; stock legs use 'premium' as the purchase price"
         actions={<button className="btn sm" onClick={() => u({ legs: [...o.legs, { type: 'put', position: 'long', strike: o.k, premium: 0, quantity: 1 }] })}><Plus size={14} />Leg</button>}>
         <div className="grid cols-2">
-          <div className="table-wrap"><table className="data">
+          <div className="table-wrap" tabIndex={0}><table className="data">
             <thead><tr><th>Type</th><th>Position</th><th>Strike</th><th>Premium / price</th><th>Qty</th><th /></tr></thead>
             <tbody>{o.legs.map((l, i) => (
               <tr key={i}>

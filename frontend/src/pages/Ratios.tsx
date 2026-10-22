@@ -97,7 +97,7 @@ export function Ratios() {
 
       {pending && (
         <Card title={`Confirm values from ${pending.file}`} subtitle="Matched by line-item name; the latest period is used, with the previous period as the opening balance. Untick anything that is wrong.">
-          <div className="table-wrap">
+          <div className="table-wrap" tabIndex={0}>
             <table className="data">
               <thead><tr><th>Use</th><th>Engine item</th><th>Label in file</th><th className="r">Value</th><th>Period</th><th className="r">Prior</th><th>Source</th></tr></thead>
               <tbody>{pending.rows.map((m, i) => (

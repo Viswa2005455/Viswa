@@ -140,7 +140,7 @@ export function CompanyDashboard({ sources, initialId }: { sources: CompanySourc
             </Card>
           </div>
           <Card title="Ten-year metrics" subtitle="Hover a metric for its formula" flush>
-            <div className="table-wrap" style={{ border: 0, borderRadius: 0 }}>
+            <div className="table-wrap" tabIndex={0} style={{ border: 0, borderRadius: 0 }}>
               <table className="data">
                 <thead><tr><th>Metric</th>{p.periods.map((per) => <th key={per} className="r">{per}</th>)}</tr></thead>
                 <tbody>{Object.entries(groups).map(([g, keys]) => [

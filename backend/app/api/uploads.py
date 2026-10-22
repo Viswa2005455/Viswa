@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..auth.deps import current_user, log_activity
@@ -13,6 +12,7 @@ from ..db.models import User
 from ..db.session import get_db
 from ..files import service
 from ..files.detect import EXTENSIONS
+from .base import BaseModel
 from .projects import own_project
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])

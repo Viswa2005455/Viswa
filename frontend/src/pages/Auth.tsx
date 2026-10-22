@@ -64,10 +64,10 @@ export function AuthScreen() {
           </ul>
         </div>
         <svg className="auth-chart" viewBox="0 0 480 140" fill="none">
-          <defs><linearGradient id="authArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#34d399" stopOpacity=".35" /><stop offset="1" stopColor="#34d399" stopOpacity="0" /></linearGradient></defs>
+          <defs><linearGradient id="authArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#5FD0B5" stopOpacity=".18" /><stop offset="1" stopColor="#5FD0B5" stopOpacity="0" /></linearGradient></defs>
           <path d="M0 120 C40 112 70 96 110 102 S170 70 210 78 S280 40 320 50 S400 18 480 10 V140 H0Z" fill="url(#authArea)" />
-          <path d="M0 120 C40 112 70 96 110 102 S170 70 210 78 S280 40 320 50 S400 18 480 10" stroke="#6ee7b7" strokeWidth="2.5" />
-          <path d="M0 128 C60 124 100 116 150 118 S240 100 300 98 S400 80 480 70" stroke="#818cf8" strokeWidth="1.8" strokeDasharray="5 6" />
+          <path d="M0 120 C40 112 70 96 110 102 S170 70 210 78 S280 40 320 50 S400 18 480 10" stroke="#5FD0B5" strokeWidth="2" />
+          <path d="M0 128 C60 124 100 116 150 118 S240 100 300 98 S400 80 480 70" stroke="rgba(255,255,255,.35)" strokeWidth="1.5" strokeDasharray="5 6" />
         </svg>
       </aside>
       <div className="auth-wrap">

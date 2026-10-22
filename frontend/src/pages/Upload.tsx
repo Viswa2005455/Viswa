@@ -278,7 +278,7 @@ function Preview({ a, ext, errorLines }: { a: Analysis; ext: string; errorLines:
   }
   if (a.kind === 'archive') {
     return (
-      <div className="table-wrap">
+      <div className="table-wrap" tabIndex={0}>
         <table className="data">
           <thead><tr><th>Entry</th><th className="r">Size</th><th>Status</th></tr></thead>
           <tbody>

@@ -35,7 +35,7 @@ export function SheetPreview({ sheets, excel }: { sheets: Sheet[]; excel: boolea
         {sheet.source?.page && <Badge>Source: page {sheet.source.page}</Badge>}
       </div>
       <Warnings items={sheet.warnings} />
-      <div className="table-wrap" style={{ maxHeight: 380 }}>
+      <div className="table-wrap" tabIndex={0} style={{ maxHeight: 380 }}>
         <table className="data">
           <thead>
             <tr><th className="rownum" />{sheet.preview.column_letters.map((l) => <th key={l}>{excel ? l : ''}</th>)}</tr>

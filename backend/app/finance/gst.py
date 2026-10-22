@@ -44,6 +44,11 @@ SOURCES = {
 }
 
 LAKH, CRORE = 100_000, 10_000_000
+# Results carry the rule set they were computed with. Rules that changed recently are applied by
+# tax period (see b2cl_limit and the GSTR-4 due date); other rules are those in force in Oct 2026.
+RULESET = {"id": "IN-GST-2026.10", "version": "2026.10.2", "rules_checked_on": "2026-10-22",
+           "status": "Due dates, thresholds, set-off order, late fees and GSTR-1 tables checked against gst.gov.in / CBIC; "
+                     "57th GST Council recommendations (8 Oct 2026) are not yet notified and are not applied."}
 
 # GSTIN state codes.
 STATES = {
@@ -174,7 +179,10 @@ def select_returns(p: GSTProfile) -> dict:
         if quarter_end:
             add("CMP-08", "Quarterly statement and tax payment", "Quarterly", "18th of the month after the quarter", _date(ny, nm, 18), "cmp08")
         fy_end_year = y + 1 if m >= 4 else y
-        add("GSTR-4", "Annual return for composition taxpayers", "Annual", "30 June after the financial year", _date(fy_end_year, 6, 30), "gstr4")
+        if fy_end_year >= 2025:  # FY 2024-25 onwards: 30 June (proviso to Rule 62, Notification 12/2024-CT)
+            add("GSTR-4", "Annual return for composition taxpayers", "Annual", "30 June after the financial year", _date(fy_end_year, 6, 30), "gstr4")
+        else:
+            add("GSTR-4", "Annual return for composition taxpayers", "Annual", "30 April after the financial year", _date(fy_end_year, 4, 30), "gstr4")
     elif reg == "non_resident":
         add("GSTR-5", "Return of a non-resident taxable person", "Monthly",
             "13th of next month, or within 7 days after registration expires if earlier", _date(ny, nm, 13), "gstr1")
@@ -203,7 +211,10 @@ def select_returns(p: GSTProfile) -> dict:
             add("GSTR-9C", "Self-certified reconciliation statement", "Annual", "With GSTR-9, 31 December", annual, "gstr9c")
     notes.append("Returns cannot be filed more than three years after their due date (Finance Act 2023, enforced on the portal).")
     notes.append("GSTR-10 (final return) is due within three months of cancellation of registration.")
-    return {"returns": returns, "state": STATES[sc], "period": f"{y}-{m:02d}", "financial_year": fy_of(y, m),
+    if (y, m) < (2024, 4):
+        warnings.append("Due dates and thresholds shown are the rules in force in October 2026; for periods before April 2024 "
+                        "check the notifications that applied then.")
+    return {"returns": returns, "state": STATES[sc], "period": f"{y}-{m:02d}", "financial_year": fy_of(y, m), "ruleset": RULESET,
             "warnings": warnings, "notes": notes}
 
 
@@ -232,6 +243,7 @@ class GSTR3BIn:
     opening_credit: Heads = field(default_factory=Heads)  # electronic credit ledger balance brought forward
     taxable_value_month: float | None = None  # for the Rule 86B check
     rule_86b_applies: bool = False
+    rule_86b_exempt: bool = False  # e.g. income tax over ₹1 lakh paid in each of the last two years (Rule 86B proviso)
     filing_date: dt.date | None = None
     due_date: dt.date | None = None
     nil_return: bool = False
@@ -295,7 +307,10 @@ def late_fee_per_return(days: int, nil: bool, aggregate_turnover: float | None) 
     else:
         cap = 10_000
     fee = min(days * per_day, cap)
-    return {"days": days, "per_day": per_day, "fee": float(fee), "cgst": fee / 2, "sgst": fee / 2, "cap": cap}
+    out = {"days": days, "per_day": per_day, "fee": float(fee), "cgst": fee / 2, "sgst": fee / 2, "cap": cap}
+    if not nil and aggregate_turnover is None:
+        out["note"] = "Turnover not given: the highest cap (₹10,000) was used. Enter turnover for the cap that applies to you."
+    return out
 
 
 def gstr3b(x: GSTR3BIn) -> dict:
@@ -313,11 +328,11 @@ def gstr3b(x: GSTR3BIn) -> dict:
 
     total_out = sum(out.values())
     credit_used = sum(use.values())
-    if x.rule_86b_applies or (x.taxable_value_month is not None and x.taxable_value_month > 50 * LAKH):
+    if not x.rule_86b_exempt and (x.rule_86b_applies or (x.taxable_value_month is not None and x.taxable_value_month > 50 * LAKH)):
         cap = 0.99 * total_out
         if credit_used > cap:
             cut = credit_used - cap
-            for key in ("sgst->sgst", "cgst->cgst", "igst->sgst", "igst->cgst", "igst->igst"):  # give back credit, last used first
+            for key in ("cess->cess", "sgst->igst", "cgst->igst", "sgst->sgst", "cgst->cgst", "igst->sgst", "igst->cgst", "igst->igst"):  # last used first
                 if cut <= 1e-9:
                     break
                 take = min(cut, use[key])
@@ -349,7 +364,7 @@ def gstr3b(x: GSTR3BIn) -> dict:
             "net": net_itc, "opening": opening, "total": credit}, "utilisation": {k: v for k, v in use.items() if v > 0},
             "table_6_1": table_6_1, "cash": cash, "total_cash": total_cash, "credit_used": credit_used,
             "closing_credit": left_credit, "interest": interest, "late_fee": late, "warnings": warnings, "notes": notes,
-            "sources": {k: SOURCES[k] for k in ("section49", "rule88a", "rule86b", "interest", "late_fee")}}
+            "ruleset": RULESET, "sources": {k: SOURCES[k] for k in ("section49", "rule88a", "rule86b", "interest", "late_fee")}}
 
 
 # ---------------------------------------------------------------- GSTIN validation
@@ -402,7 +417,20 @@ def _r2(x: float) -> float:
     return round(x + 0.0, 2)
 
 
-def gstr1(invoices: list[Invoice], supplier_gstin: str, aggregate_turnover: float | None = None) -> dict:
+OTHER_COUNTRIES = "96"  # place of supply for exports
+
+
+def b2cl_limit(period: str | None) -> float:
+    """Rule 59(4): ₹2.5 lakh until July 2024, ₹1 lakh from the August 2024 tax period (Notification 12/2024-CT)."""
+    return 2.5 * LAKH if period and period < "2024-08" else B2CL_LIMIT
+
+
+def gstr1(invoices: list[Invoice], supplier_gstin: str, aggregate_turnover: float | None = None, period: str | None = None) -> dict:
+    if period is not None and not re.fullmatch(r"20\d\d-(0[1-9]|1[0-2])", period):
+        raise FinanceInputError("Tax period must look like 2026-09.")
+    if period is not None and period < "2017-07":
+        raise FinanceInputError("GST began in July 2017; earlier periods cannot be prepared.")
+    limit_b2cl = b2cl_limit(period)
     sup = (supplier_gstin or "").strip().upper()
     if not valid_gstin(sup):
         raise FinanceInputError("Enter your own valid GSTIN (15 characters; the check digit must match).")
@@ -412,13 +440,16 @@ def gstr1(invoices: list[Invoice], supplier_gstin: str, aggregate_turnover: floa
     if len(invoices) > 100_000:
         raise FinanceInputError("At most 100,000 rows per file.")
     issues: list[dict] = []
-    tables: dict[str, list] = {"b2b": [], "b2cl": [], "exp": [], "sez": [], "cdnr": [], "cdnur": []}
+    tables: dict[str, list] = {"b2b": [], "b2cl": [], "exp": [], "sez": [], "deemed": [], "cdnr": [], "cdnur": []}
     b2cs: dict[tuple, dict] = defaultdict(lambda: {"taxable_value": 0.0, "igst": 0.0, "cgst": 0.0, "sgst": 0.0, "cess": 0.0, "count": 0})
     nil = {k: {"inter_registered": 0.0, "inter_unregistered": 0.0, "intra_registered": 0.0, "intra_unregistered": 0.0}
            for k in ("nil_rated", "exempt", "non_gst")}
     hsn: dict[tuple, dict] = defaultdict(lambda: {"taxable_value": 0.0, "igst": 0.0, "cgst": 0.0, "sgst": 0.0, "cess": 0.0, "count": 0})
     docs: dict[str, list[str]] = defaultdict(list)
     hsn_digits = 6 if (aggregate_turnover or 0) > 5 * CRORE else 4
+    extra_notes: list[str] = []
+    if aggregate_turnover is None:
+        extra_notes.append("Last year's aggregate turnover was not given, so 4-digit HSN codes were assumed (turnover up to ₹5 crore).")
     seen: set[tuple] = set()
 
     def issue(inv: Invoice, msg: str, level: str = "error"):
@@ -453,8 +484,13 @@ def gstr1(invoices: list[Invoice], supplier_gstin: str, aggregate_turnover: floa
             issue(inv, f"Recipient GSTIN {gstin} is not valid (format or check digit).")
             gstin = None if len(gstin) != 15 else gstin
         pos = (inv.place_of_supply or "").strip()
-        pos = pos.zfill(2)[:2] if pos else (gstin[:2] if gstin else home)
-        if pos not in STATES:
+        if not pos and not gstin and not cat.startswith("export"):
+            issue(inv, "Place of supply is missing; your own state was assumed (intra-state). Check it.", "warning")
+        pos = pos.zfill(2)[:2] if pos else (gstin[:2] if gstin else OTHER_COUNTRIES if cat.startswith("export") else home)
+        if pos == OTHER_COUNTRIES and not cat.startswith("export"):
+            issue(inv, "Place of supply 96 (other countries) is only for exports.")
+            continue
+        if pos not in STATES and pos != OTHER_COUNTRIES:
             issue(inv, f"Place of supply '{inv.place_of_supply}' is not a valid state code.")
             continue
         tv = inv.taxable_value
@@ -490,22 +526,36 @@ def gstr1(invoices: list[Invoice], supplier_gstin: str, aggregate_turnover: floa
         if cgst and sgst and abs(cgst - sgst) > 0.5:
             issue(inv, "CGST and SGST should be equal.", "warning")
         value = inv.invoice_value if inv.invoice_value is not None else tv + igst + cgst + sgst + (inv.cess or 0)
-        row = {"number": num, "date": inv.date, "gstin": gstin, "place_of_supply": pos, "state": STATES[pos], "rate": rate,
+        row = {"number": num, "date": inv.date, "gstin": gstin, "place_of_supply": pos,
+               "state": STATES.get(pos, "Other countries"), "rate": rate,
                "taxable_value": _r2(tv), "igst": _r2(igst), "cgst": _r2(cgst), "sgst": _r2(sgst), "cess": _r2(inv.cess or 0),
                "invoice_value": _r2(value), "row": inv.row}
         sign = -1 if doc == "credit_note" else 1
         if doc != "invoice":
             row["note_type"] = "C" if doc == "credit_note" else "D"
-            (tables["cdnr"] if gstin else tables["cdnur"]).append(row)
+            if gstin:
+                tables["cdnr"].append(row)
+            elif cat.startswith("export") or (inter and value > limit_b2cl):
+                row["ur_type"] = ("EXPWP" if cat == "export_with_payment" else "EXPWOP") if cat.startswith("export") else "B2CL"
+                tables["cdnur"].append(row)
+            else:
+                # notes on small B2C supplies are netted into Table 7, not reported in 9B
+                b = b2cs[(pos, rate)]
+                for h in ("igst", "cgst", "sgst", "cess"):
+                    b[h] += sign * row[h]
+                b["taxable_value"] += sign * tv
+                b["count"] += 1
         elif cat.startswith("export"):
             row["with_payment"] = cat == "export_with_payment"
             tables["exp"].append(row)
-        elif cat.startswith("sez") or cat == "deemed_export":
+        elif cat.startswith("sez"):
             row["kind"] = cat
             tables["sez"].append(row)
+        elif cat == "deemed_export":
+            tables["deemed"].append(row)
         elif gstin:
             tables["b2b"].append(row)
-        elif inter and value > B2CL_LIMIT:
+        elif inter and value > limit_b2cl:
             tables["b2cl"].append(row)
         else:
             k = (pos, rate)
@@ -530,24 +580,26 @@ def gstr1(invoices: list[Invoice], supplier_gstin: str, aggregate_turnover: floa
     def total(rows: list[dict]) -> dict:
         return {k: _r2(sum(r[k] for r in rows)) for k in ("taxable_value", "igst", "cgst", "sgst", "cess")} | {"count": len(rows)}
 
-    b2cs_rows = [{"place_of_supply": k[0], "state": STATES[k[0]], "rate": k[1], **{x: _r2(v) if isinstance(v, float) else v for x, v in b.items()}}
+    b2cs_rows = [{"place_of_supply": k[0], "state": STATES.get(k[0], k[0]), "rate": k[1], **{x: _r2(v) if isinstance(v, float) else v for x, v in b.items()}}
                  for k, b in sorted(b2cs.items(), key=lambda kv: (kv[0][0], kv[0][1] or 0))]
     hsn_rows = [{"section": k[0], "hsn": k[1], "rate": k[2], **{x: _r2(v) if isinstance(v, float) else v for x, v in v.items()}}
                 for k, v in sorted(hsn.items(), key=lambda kv: (kv[0][0], kv[0][1], kv[0][2] or 0))]
     doc_summary = [{"document": d, "count": len(nums), "from": min(nums), "to": max(nums)} for d, nums in docs.items() if nums]
     summary = {"4A_b2b": total(tables["b2b"]), "5_b2cl": total(tables["b2cl"]), "6A_exports": total(tables["exp"]),
-               "6B_sez": total(tables["sez"]), "7_b2cs": total(b2cs_rows), "9B_cdnr": total(tables["cdnr"]),
+               "6B_sez": total(tables["sez"]), "6C_deemed_exports": total(tables["deemed"]), "7_b2cs": total(b2cs_rows), "9B_cdnr": total(tables["cdnr"]),
                "9B_cdnur": total(tables["cdnur"])}
     notes_rows = tables["cdnr"] + tables["cdnur"]
     liability = {h: _r2(sum(v[h] for k, v in summary.items() if not k.startswith("9B"))
                         + sum(r[h] for r in notes_rows if r["note_type"] == "D")
                         - sum(r[h] for r in notes_rows if r["note_type"] == "C")) for h in ("igst", "cgst", "sgst", "cess")}
-    return {"supplier_gstin": sup, "state": STATES[home], "tables": {**tables, "b2cs": b2cs_rows, "nil": nil, "hsn": hsn_rows,
+    return {"supplier_gstin": sup, "state": STATES[home], "period": period, "b2cl_limit": limit_b2cl, "ruleset": RULESET,
+            "tables": {**tables, "b2cs": b2cs_rows, "nil": nil, "hsn": hsn_rows,
             "documents": doc_summary}, "summary": summary, "liability": liability, "hsn_digits": hsn_digits,
             "issues": issues, "errors": sum(1 for i in issues if i["level"] == "error"),
             "warnings": sum(1 for i in issues if i["level"] == "warning"),
-            "notes": [f"B2C inter-state invoices above ₹{B2CL_LIMIT:,.0f} are reported invoice-wise in Table 5 (B2CL); smaller B2C "
-                      "supplies are summarised by state and rate in Table 7.",
+            "notes": extra_notes + [f"B2C inter-state invoices above ₹{limit_b2cl:,.0f} are reported invoice-wise in Table 5 (B2CL); smaller B2C "
+                      "supplies, and notes on them, are summarised by state and rate in Table 7.",
+                      "Nil-rated, exempt and non-GST supplies are reported in Table 8 and are not included in the HSN summary here.",
                       f"Table 12 needs HSN/SAC of at least {hsn_digits} digits for your turnover, split into B2B and B2C.",
                       "Upload through the GST Returns Offline Tool or enter the summaries on the portal; this app does not file."],
             "source": SOURCES["gstr1"]}

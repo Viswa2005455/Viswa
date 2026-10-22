@@ -93,6 +93,16 @@ def irr(cash_flows: Sequence[float], low: float = -0.99, high: float = 10.0) -> 
             roots.append(float(brentq(f, r0, r1, xtol=1e-14, rtol=1e-12, maxiter=200)))
     if values[-1] == 0:
         roots.append(float(grid[-1]))
+    # A grid only sees sign changes, so it misses a root where NPV touches zero without crossing
+    # (a double root) and two roots closer together than the grid step. NPV is a polynomial in
+    # x = 1/(1+r), so its real roots are also taken from the polynomial and verified.
+    scale = sum(abs(c) for c in flows)
+    for x in np.roots(list(reversed(flows))):
+        if abs(x.imag) > 1e-3 * max(1.0, abs(x.real)) or x.real <= 0:  # a double root can come back slightly complex; NPV is checked below
+            continue
+        r = 1 / x.real - 1
+        if low <= r <= high and abs(f(r)) <= 1e-9 * scale and all(abs(r - q) > 1e-7 for q in roots):
+            roots.append(float(r))
     roots = sorted({round(r, 12) for r in roots})
 
     if not roots:
@@ -132,14 +142,17 @@ class PaybackResult:
 
 
 def _payback_from(flows: list[float]) -> PaybackResult:
+    """Time until cumulative cash flow recovers after first going negative. CF0 need not be the
+    outlay: [0, -100, 50, 80] pays back at 2.625."""
     cumulative: list[float] = []
     running = 0.0
     for cf in flows:
         running += cf
         cumulative.append(running)
-    if flows[0] >= 0:
-        return PaybackResult(0.0, cumulative, "No initial outlay at t=0, so payback is immediate.")
-    for t in range(1, len(flows)):
+    first_negative = next((t for t, c in enumerate(cumulative) if c < 0), None)
+    if first_negative is None:
+        return PaybackResult(0.0, cumulative, "Cumulative cash flow never goes negative, so payback is immediate.")
+    for t in range(first_negative + 1, len(flows)):
         if cumulative[t] >= 0 > cumulative[t - 1]:
             # Linear interpolation assumes the period's cash flow arrives evenly through the period.
             fraction = -cumulative[t - 1] / flows[t]
@@ -149,7 +162,7 @@ def _payback_from(flows: list[float]) -> PaybackResult:
                 return PaybackResult(period, cumulative,
                                      "Cumulative cash flow turns negative again later; payback is misleading here.")
             return PaybackResult(period, cumulative, "Assumes cash flows arrive evenly within each period.")
-    return PaybackResult(None, cumulative, "The initial investment is not recovered within the project life.")
+    return PaybackResult(None, cumulative, "The investment is not recovered within the project life.")
 
 
 def payback_period(cash_flows: Sequence[float]) -> PaybackResult:

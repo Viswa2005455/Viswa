@@ -35,7 +35,7 @@ FIELDS: dict[str, list[str]] = {
     "cess": ["cess", "cessrs", "cessamount", "taxamountcess"],
     "hsn": ["hsn", "hsncode", "hsnsac", "sac", "hsnsaccode"],
     "doc_type": ["documenttype", "doctype", "type", "notetype", "vouchertype"],
-    "category": ["category", "supplycategory", "supplytype"],
+    "category": ["category", "supplycategory"],  # "Supply type" (inter/intra state) is not a category
 }
 _ALIASES = {alias: f for f, aliases in FIELDS.items() for alias in aliases}
 

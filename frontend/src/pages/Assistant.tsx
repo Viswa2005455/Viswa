@@ -139,7 +139,7 @@ export function Assistant() {
             <div className="stack" style={{ gap: 6 }}>
               {MODES.map((m) => (
                 <button key={m.value} className={`btn mode-btn ${mode === m.value ? 'primary' : ''}`} aria-pressed={mode === m.value} onClick={() => setMode(m.value)}>
-                  <span><b>{m.label}</b><br /><span style={{ fontSize: 12, opacity: 0.85 }}>{m.hint}</span></span>
+                  <span><b>{m.label}</b><br /><span style={{ fontSize: 12 }}>{m.hint}</span></span>
                 </button>
               ))}
             </div>

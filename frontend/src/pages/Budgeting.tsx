@@ -188,7 +188,7 @@ export function Budgeting() {
       {locked && <div className="mt"><Callout tone="info">This version is approved and locked. Create a new version to make changes.</Callout></div>}
 
       <Card title="Budget lines" subtitle="Click a line to edit its method and inputs" flush className="mt">
-        <div className="table-wrap" style={{ border: 0, borderRadius: 0 }}>
+        <div className="table-wrap" tabIndex={0} style={{ border: 0, borderRadius: 0 }}>
           <table className="data">
             <thead><tr><th /><th>Line</th><th>Type</th><th>Department</th><th>Product</th><th>Method</th><th className="r">Q1</th><th className="r">Q2</th><th className="r">Q3</th><th className="r">Q4</th><th className="r">Annual</th><th /></tr></thead>
             <tbody>
@@ -251,7 +251,7 @@ export function Budgeting() {
             <Legend items={[{ label: 'Revenue', color: 'var(--chart-1)' }, { label: 'Expenses', color: 'var(--chart-4)' }, { label: 'Operating result', color: 'var(--chart-3)' }]} />
           </Card>
           <Card title="By department & product">
-            <div className="table-wrap">
+            <div className="table-wrap" tabIndex={0}>
               <table className="data">
                 <thead><tr><th>Department</th><th className="r">Revenue</th><th className="r">Expense</th><th className="r">CapEx</th></tr></thead>
                 <tbody>{Object.entries(r.by_department).map(([d, x]) => (
@@ -279,7 +279,7 @@ export function Budgeting() {
           {store.versions.length < 2 && <p className="faint mt-sm" style={{ fontSize: 12.5 }}>Create a second version with "New version from this" to compare.</p>}
           {cmp.error && <ErrorBox error={cmp.error} />}
           {other && cmp.data && (
-            <div className="table-wrap mt">
+            <div className="table-wrap mt" tabIndex={0}>
               <table className="data">
                 <thead><tr><th>Line</th><th className="r">{other.name}</th><th className="r">{v.name}</th><th className="r">Change</th><th className="r">%</th></tr></thead>
                 <tbody>{cmp.data.lines.filter((d) => d.status !== 'unchanged').map((d) => (
@@ -395,7 +395,7 @@ function FlexibleBudget() {
       {!ok && <div className="mt-sm"><Callout tone="warn">Enter fixed cost, variable cost and at least one non-negative activity level.</Callout></div>}
       {res.error && <ErrorBox error={res.error} />}
       {res.data && (
-        <div className="table-wrap mt">
+        <div className="table-wrap mt" tabIndex={0}>
           <table className="data">
             <thead><tr><th className="r">Units</th><th className="r">Fixed</th><th className="r">Variable</th><th className="r">Total cost</th><th className="r">Cost per unit</th></tr></thead>
             <tbody>{res.data.levels.map((x) => (
