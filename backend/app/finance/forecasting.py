@@ -164,6 +164,8 @@ def forecast(series: list[float], method: Method, horizon: int, *, confidence: f
     # Time-aware holdout backtest.
     if holdout is None:
         holdout = max(1, min(len(y) // 4, 12))
+    elif holdout < 1 or holdout != int(holdout):
+        raise FinanceInputError("The holdout must be a whole number of periods, 1 or more.")
     backtest: dict[str, float | None] = {"holdout": holdout, "mae": None, "rmse": None, "mape": None}
     if len(y) - holdout >= min_len:
         train = y[:-holdout]

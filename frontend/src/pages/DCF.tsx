@@ -6,7 +6,7 @@ import { DCFAssumptions } from '../components/DCFInputs';
 import { SaveLoad } from '../components/SaveLoad';
 import { MonteCarlo, ReverseDCF, useMarketPrice } from '../components/ValuationRange';
 import { C, ChartTooltip, Legend, axisProps, gridProps } from '../components/charts';
-import { Badge, Callout, Card, ErrorBox, Formula, Kpi, LearnBox, NumberField, PageHeader, Warnings } from '../components/ui';
+import { Badge, Callout, Card, ErrorBox, Formula, Kpi, LearnBox, NumberField, PageHeader, Stable, Warnings } from '../components/ui';
 import { api } from '../lib/api';
 import { useDCFModel } from '../lib/dcfModel';
 import { fmtCompact, fmtMoney, fmtNum, fmtPct, isNum } from '../lib/format';
@@ -79,7 +79,7 @@ export function DCF() {
           </div>
           {stale && <Warnings items={stale.warnings} />}
 
-          {stale && (
+          <Stable deps={[stale, cur, req]} render={() => stale && (<>
             <div className="grid cols-2">
               <Card title="Free cash flow to the firm" subtitle="FCFF and its present value by year">
                 <div className="chart">
@@ -112,10 +112,8 @@ export function DCF() {
                 </div>
               </Card>
             </div>
-          )}
 
-          {stale && (
-            <Card title="Projection" subtitle={`Discounting at WACC ${fmtPct(model.wacc, 2)}, ${model.mid_year ? 'mid-year' : 'end-of-year'} convention`} flush>
+            <Card title="Projection" subtitle={`Discounting at WACC ${fmtPct(req.wacc, 2)}, ${req.mid_year ? 'mid-year' : 'end-of-year'} convention`} flush>
               <div className="table-wrap" tabIndex={0} style={{ border: 0, borderTop: '1px solid var(--border)', borderRadius: 0 }}>
                 <table className="data">
                   <thead><tr><th>Line item</th>{stale.years.map((y) => <th key={y.year} className="r">Year {y.year}</th>)}</tr></thead>
@@ -138,19 +136,19 @@ export function DCF() {
                   <div className="metric-row"><span><b>Equity value</b></span><span className="v">{fmtMoney(stale.equity_value, cur, 1)}</span></div>
                 </div>
                 <Formula>{`FCFF = EBIT × (1 − T) + D&A − CapEx − ΔNWC
-${model.terminal_method === 'gordon'
-  ? `TV = FCFFₙ × (1 + g) / (WACC − g)\n   = ${fmtNum(stale.years[stale.years.length - 1].fcff, 2)} × (1 + ${fmtPct(model.terminal_growth, 2)}) / (${fmtPct(model.wacc, 2)} − ${fmtPct(model.terminal_growth, 2)})`
-  : `TV = EBITDAₙ × multiple = ${fmtNum(stale.years[stale.years.length - 1].ebitda, 2)} × ${model.exit_multiple}`}
+${req.terminal_method === 'gordon'
+  ? `TV = FCFFₙ × (1 + g) / (WACC − g)\n   = ${fmtNum(stale.years[stale.years.length - 1].fcff, 2)} × (1 + ${fmtPct(req.terminal_growth, 2)}) / (${fmtPct(req.wacc, 2)} − ${fmtPct(req.terminal_growth, 2)})`
+  : `TV = EBITDAₙ × multiple = ${fmtNum(stale.years[stale.years.length - 1].ebitda, 2)} × ${req.exit_multiple}`}
    = ${fmtNum(stale.terminal_value, 2)}
 PV(TV) = TV / (1 + WACC)^${stale.years.length}
 EV = Σ PV(FCFF) + PV(TV)
 Equity = EV − Debt + Cash`}</Formula>
               </div>
             </Card>
-          )}
+          </>)} />
 
-          {stale && <ReverseDCF model={model} price={marketPrice} setPrice={setMarketPrice} />}
-          {stale && <MonteCarlo model={model} price={marketPrice} />}
+          {stale && <ReverseDCF model={req} price={marketPrice} setPrice={setMarketPrice} />}
+          {stale && <MonteCarlo model={req} price={marketPrice} />}
 
           <LearnBox title="Discounted cash flow valuation">
             <div className="stack" style={{ fontSize: 13 }}>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { startTransition, useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, isAbort } from './api';
 
 /** Run an async API call, tracking loading/error. A newer call aborts the older one (passed in as
@@ -9,6 +9,7 @@ export function useAsync<T>(fn: (signal: AbortSignal) => Promise<T>, deps: unkno
   const [loading, setLoading] = useState(enabled);
   const seq = useRef(0);
   const ctl = useRef<AbortController | null>(null);
+  const hasData = useRef(false);
 
   const run = useCallback(() => {
     const id = ++seq.current;
@@ -17,12 +18,20 @@ export function useAsync<T>(fn: (signal: AbortSignal) => Promise<T>, deps: unkno
     ctl.current = c;
     setLoading(true);
     fn(c.signal)
-      .then((d) => { if (id === seq.current) { setData(d); setError(null); } })
+      // Updated results render as a transition, so React can pause redrawing charts to handle the next
+      // keystroke first. The first result renders at once (deferring it would paint the placeholder and
+      // then shift the layout). Loading ends in the same update as the data.
+      .then((d) => {
+        if (id !== seq.current) return;
+        const apply = () => { setData(d); setError(null); setLoading(false); };
+        if (hasData.current) startTransition(apply); else apply();
+        hasData.current = true;
+      })
       .catch((e: unknown) => {
         if (isAbort(e) || id !== seq.current) return;
         setError(e instanceof ApiError || e instanceof Error ? e.message : 'Unexpected error');
-      })
-      .finally(() => { if (id === seq.current) setLoading(false); });
+        setLoading(false);
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 

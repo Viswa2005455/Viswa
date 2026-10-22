@@ -105,3 +105,10 @@ def test_sensitivity_grid_refuses_assumption_the_terminal_method_ignores():
                      capex_pct_revenue=0.04, nwc_pct_revenue=0.1, wacc=0.10, terminal_growth=0.03, shares_outstanding=100)
     with pytest.raises(FinanceInputError):
         two_way(base, "wacc", [0.09, 0.1], "exit_multiple", [8, 10], "enterprise_value")
+
+
+@pytest.mark.parametrize("holdout", [0, -1])
+def test_forecast_refuses_non_positive_holdout(holdout):
+    from app.finance.forecasting import forecast
+    with pytest.raises(FinanceInputError):
+        forecast([1, 2, 3, 4, 5, 6], "linear", 2, holdout=holdout)

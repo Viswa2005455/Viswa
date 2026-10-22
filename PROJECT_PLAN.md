@@ -2,7 +2,7 @@
 
 This file is the source of truth for progress. Update it at the end of every working session so development can resume reliably.
 
-_Last updated: 2026-10-22 (v0.12.0 — website upgrade)_
+_Last updated: 2026-10-22 (v0.12.1 — website upgrade)_
 
 ## Environment found at the start
 
@@ -30,6 +30,7 @@ _Last updated: 2026-10-22 (v0.12.0 — website upgrade)_
 - **Accuracy:** a full audit of the finance, tax and GST engines against independent hand calculations. Fixed: surcharge tiers excluding dividends and capital gains, 80CCE/80CCD(2) caps, 288A rounding, 234F threshold, 234A base, co-operative AMT surcharge, Rule 86B give-back order and exemption, CDNUR scope, export POS 96, deemed exports, period-dated B2CL limit; IRR double and close roots, payback with CF₀ ≥ 0, year-profile-preserving DCF sensitivities, refusal of ignored assumptions, break-even with invalid range ends, reverse-DCF multiple solutions, Monte Carlo clip validation; SES interval σ, MAPE with zero actuals, failed backtests, phasing remainder, zero-budget materiality, ratio input validation, ROE with negative equity, interest sign, forensic D/E and GMI, balanced journal entries, deferred-tax benefit entry, lease and depreciation validation, M², max drawdown, binomial kind, limiting factor and CVP validation. Each fix has a test with an independently calculated answer.
 - **Versioned rules:** income tax `IN-ITA1961-AY2026-27` and GST `IN-GST-2026.10` are shown on the pages and carried in every result; other assessment years are refused.
 - **Speed:** recalculation delay 150 ms (was 250–300); every request has a timeout; a newer request cancels the older one; safe reads retry once. Measured server time for calculations 6–22 ms median (Monte Carlo 5,000 draws ≈ 100 ms).
+- **Responsiveness (v0.12.1):** charts and result tables redraw only when a new result arrives (`Stable` in `components/ui.tsx`), the cash-budget grid redraws only the edited row, and refreshed results render as a React transition so typing is handled first. Measured with Chromium at 4× CPU slowdown on 9 Mbps / 40 ms: longest input event 32–192 ms across 13 input pages (was up to 304 ms), layout shift ≤ 0.027 on every measured page, LCP 0.52–0.69 s.
 - **AI:** provider adapter with a model allow-list (Opus 5.5, Sonnet 5.5, Haiku 5.5), timeouts, retries, error categories, served-model and fallback reporting, and calculator results shown apart from the AI text. New **AI Model Health** page; live checks only on request. No live AI call was possible in the build environment (no API key), so the adapter is tested with a fake client.
 
 ## Tax, GST and markets (v0.11.0)
@@ -240,7 +241,6 @@ The app is now aimed at practising professionals: CPAs, CFA charterholders, CMAs
 - The accounting schedules assume settlement on period dates (no stub periods or accrued interest between coupon dates), and lease modifications/remeasurements are not modelled.
 
 - AI: live calls to Anthropic were not tested in the build environment (no key); run "Access" and "Test reply" on AI Model Health after adding a key. Health results are kept in memory per server process and reset on restart.
-- Under 4× CPU throttling the longest input event measured 240 ms (target 200 ms); unthrottled it is 56 ms.
 
 ## Next steps (in order)
 

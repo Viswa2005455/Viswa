@@ -1,5 +1,5 @@
 import { AlertTriangle, ChevronDown, GraduationCap, Info, CheckCircle2, XCircle, Construction } from 'lucide-react';
-import { cloneElement, isValidElement, useEffect, useId, useRef, useState, type ReactElement, type ReactNode } from 'react';
+import { cloneElement, isValidElement, memo, useEffect, useId, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { isNum, parseInputNumber } from '../lib/format';
 import { useSettings } from '../lib/settings';
@@ -250,3 +250,10 @@ export function UnderDevelopment({ title, phase, summary, planned, available }: 
     </div>
   );
 }
+
+/** Renders `render()` again only when one of `deps` changes (compared with Object.is). Wrap charts and
+ * large result tables in it so typing in an input does not redraw them before the new result arrives. */
+export const Stable = memo(
+  function Stable({ render }: { deps: readonly unknown[]; render: () => ReactNode }) { return <>{render()}</>; },
+  (a, b) => a.deps.length === b.deps.length && a.deps.every((d, i) => Object.is(d, b.deps[i])),
+);

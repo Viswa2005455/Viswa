@@ -1,10 +1,10 @@
 import { Download, Plus, RotateCcw, Trash2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { Bar, CartesianGrid, ComposedChart, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis, Cell } from 'recharts';
 import { C, ChartTooltip, Legend, axisProps, gridProps } from '../components/charts';
 import { Badge, Callout, Card, ErrorBox, Formula, Kpi, LearnBox, NumberField, PageHeader } from '../components/ui';
 import { api } from '../lib/api';
-import { downloadFile, fmtCompact, fmtMoney, fmtNum, fmtPct, isNum, toCSV } from '../lib/format';
+import { downloadFile, fmtCompact, fmtMoney, fmtNum, fmtPct, isNum, toCSV, type Currency } from '../lib/format';
 import { useSettings } from '../lib/settings';
 import { useAsync, useDebounced } from '../lib/useApi';
 
@@ -105,7 +105,27 @@ export function Investment() {
             <Kpi label="Sign changes" value={r ? String(r.irr.sign_changes) : '—'} delta={r ? (r.irr.sign_changes === 1 ? 'Conventional' : 'Unconventional') : undefined} />
           </div>
 
-          {r && (
+          {r && req && <AppraisalResults r={r} cur={cur} rate={req.discount_rate} />}
+
+          <LearnBox title="NPV, IRR and MIRR">
+            <div className="stack" style={{ fontSize: 13 }}>
+              <p><b>NPV</b> discounts each cash flow back to today and adds them. Positive NPV means the project earns more than the discount rate (the required return).</p>
+              <p><b>IRR</b> is the rate at which NPV = 0. Accept if IRR exceeds the cost of capital — but only for conventional cash flows (one sign change). With several sign changes there may be several IRRs or none; use NPV.</p>
+              <p><b>MIRR</b> assumes positive flows are reinvested at a realistic reinvestment rate and outflows are financed at the finance rate, giving a single, comparable rate.</p>
+              <p><b>Payback</b> ignores the time value of money and cash flows after the payback point; discounted payback fixes the first issue only.</p>
+              <p><b>Common mistake:</b> Excel's <code>NPV()</code> discounts its first value. Use <code>=CF0 + NPV(r, CF1:CFn)</code>.</p>
+            </div>
+          </LearnBox>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Charts and the step-by-step table. Memoised so typing in the inputs does not redraw them; they
+ * change only when a new result arrives, and use the rate that result was calculated with. */
+const AppraisalResults = memo(function AppraisalResults({ r, cur, rate }: { r: Appraisal; cur: Currency; rate: number }) {
+  return (
             <>
               <Callout tone={r.npv >= 0 ? 'success' : 'warn'} title={r.decision}>
                 {r.irr.message} {r.payback.message !== 'Assumes cash flows arrive evenly within each period.' ? r.payback.message : ''}
@@ -137,7 +157,7 @@ export function Investment() {
                         <YAxis {...axisProps} width={56} tickFormatter={(v) => fmtCompact(v, cur)} />
                         <Tooltip content={<ChartTooltip labelFormat={(l) => `Rate ${fmtPct(Number(l), 1)}`} format={(v) => fmtMoney(v, cur)} />} />
                         <ReferenceLine y={0} stroke="var(--border-strong)" />
-                        {isNum(rate) && <ReferenceLine x={rate} stroke={C.c3} strokeDasharray="4 4" label={{ value: 'Your rate', fill: 'var(--text-muted)', fontSize: 11, position: 'insideTopRight' }} />}
+                        <ReferenceLine x={rate} stroke={C.c3} strokeDasharray="4 4" label={{ value: 'Your rate', fill: 'var(--text-muted)', fontSize: 11, position: 'insideTopRight' }} />
                         {r.irr.values.map((v) => <ReferenceLine key={v} x={v} stroke={C.c4} strokeDasharray="2 3" />)}
                         <Line dataKey="npv" name="NPV" stroke={C.c1} strokeWidth={2.2} dot={false} />
                       </LineChart>
@@ -163,19 +183,5 @@ export function Investment() {
                 </div>
               </Card>
             </>
-          )}
-
-          <LearnBox title="NPV, IRR and MIRR">
-            <div className="stack" style={{ fontSize: 13 }}>
-              <p><b>NPV</b> discounts each cash flow back to today and adds them. Positive NPV means the project earns more than the discount rate (the required return).</p>
-              <p><b>IRR</b> is the rate at which NPV = 0. Accept if IRR exceeds the cost of capital — but only for conventional cash flows (one sign change). With several sign changes there may be several IRRs or none; use NPV.</p>
-              <p><b>MIRR</b> assumes positive flows are reinvested at a realistic reinvestment rate and outflows are financed at the finance rate, giving a single, comparable rate.</p>
-              <p><b>Payback</b> ignores the time value of money and cash flows after the payback point; discounted payback fixes the first issue only.</p>
-              <p><b>Common mistake:</b> Excel's <code>NPV()</code> discounts its first value. Use <code>=CF0 + NPV(r, CF1:CFn)</code>.</p>
-            </div>
-          </LearnBox>
-        </div>
-      </div>
-    </div>
   );
-}
+});

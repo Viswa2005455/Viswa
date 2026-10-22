@@ -1,9 +1,9 @@
 import { Download, Plus, RotateCcw, Trash2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { C, ChartTooltip, Legend, axisProps, gridProps } from '../components/charts';
 import { SaveLoad } from '../components/SaveLoad';
-import { Badge, Callout, Card, ErrorBox, Formula, Kpi, LearnBox, NumberField, PageHeader, Tabs, Warnings } from '../components/ui';
+import { Badge, Callout, Card, ErrorBox, Formula, Kpi, LearnBox, NumberField, PageHeader, Stable, Tabs, Warnings } from '../components/ui';
 import { api } from '../lib/api';
 import { downloadFile, fmtCompact, fmtMoney, fmtNum, isNum, toCSV } from '../lib/format';
 import { useSettings } from '../lib/settings';
@@ -59,32 +59,43 @@ Cash released = (Receivables now − target) + (Inventory now − target) + (Pay
   );
 }
 
-function LinesEditor({ title, lines, periods, onChange }: { title: string; lines: CashLine[]; periods: string[]; onChange: (l: CashLine[]) => void }) {
+/** Monthly input grid. Memoised (with memoised rows) so typing in one cell redraws only that row. */
+const LinesEditor = memo(function LinesEditor({ title, lines, periods, onChange }: { title: string; lines: CashLine[]; periods: string[]; onChange: (l: CashLine[]) => void }) {
+  const latest = useRef({ lines, onChange });
+  latest.current = { lines, onChange };
+  const setRow = useCallback((i: number, row: CashLine | null) => {
+    const { lines: cur, onChange: emit } = latest.current;
+    emit(row ? cur.map((x, j) => (j === i ? row : x)) : cur.filter((_, j) => j !== i));
+  }, []);
   return (
     <Card title={title} flush actions={<button className="btn sm" onClick={() => onChange([...lines, { name: 'New line', values: Array(periods.length).fill(0) }])}><Plus size={14} />Line</button>}>
       <div className="table-wrap" tabIndex={0} style={{ border: 0, borderRadius: 0 }}>
         <table className="data">
           <thead><tr><th>Line</th>{periods.map((p) => <th key={p} className="r">{p}</th>)}<th className="r">Total</th><th /></tr></thead>
           <tbody>
-            {lines.map((l, i) => (
-              <tr key={i}>
-                <td style={{ minWidth: 170 }}><input className="input compact" aria-label="Line name" value={l.name} onChange={(e) => onChange(lines.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} /></td>
-                {l.values.map((v, k) => (
-                  <td key={k} style={{ minWidth: 118 }}>
-                    <NumberField compact ariaLabel={`${l.name} ${periods[k]}`} value={v} min={0} required
-                      onChange={(nv) => onChange(lines.map((x, j) => (j === i ? { ...x, values: x.values.map((y, m) => (m === k ? nv : y)) } : x)))} />
-                  </td>
-                ))}
-                <td className="r">{fmtNum(l.values.reduce<number>((a, b) => a + (b ?? 0), 0), 0)}</td>
-                <td><button className="btn icon sm ghost" aria-label={`Remove ${l.name}`} onClick={() => onChange(lines.filter((_, j) => j !== i))}><Trash2 size={14} /></button></td>
-              </tr>
-            ))}
+            {lines.map((l, i) => <LineRow key={i} index={i} line={l} periods={periods} setRow={setRow} />)}
           </tbody>
         </table>
       </div>
     </Card>
   );
-}
+});
+
+const LineRow = memo(function LineRow({ index: i, line: l, periods, setRow }: { index: number; line: CashLine; periods: string[]; setRow: (i: number, row: CashLine | null) => void }) {
+  return (
+    <tr>
+      <td style={{ minWidth: 170 }}><input className="input compact" aria-label="Line name" value={l.name} onChange={(e) => setRow(i, { ...l, name: e.target.value })} /></td>
+      {l.values.map((v, k) => (
+        <td key={k} style={{ minWidth: 118 }}>
+          <NumberField compact ariaLabel={`${l.name} ${periods[k]}`} value={v} min={0} required
+            onChange={(nv) => setRow(i, { ...l, values: l.values.map((y, m) => (m === k ? nv : y)) })} />
+        </td>
+      ))}
+      <td className="r">{fmtNum(l.values.reduce<number>((a, b) => a + (b ?? 0), 0), 0)}</td>
+      <td><button className="btn icon sm ghost" aria-label={`Remove ${l.name}`} onClick={() => setRow(i, null)}><Trash2 size={14} /></button></td>
+    </tr>
+  );
+});
 
 function CashBudget() {
   const { settings } = useSettings();
@@ -92,6 +103,10 @@ function CashBudget() {
   const [s, setS] = useState<{ data: CBState; isExample: boolean }>(() => loadRaw('fis.cashbudget', { data: EXAMPLE, isExample: true }));
   const set = (d: CBState, example = false) => { const n = { data: d, isExample: example }; setS(n); save('fis.cashbudget', n); };
   const d = s.data;
+  const latest = useRef(d);
+  latest.current = d;
+  const setReceipts = useCallback((l: CashLine[]) => set({ ...latest.current, receipts: l }), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const setPayments = useCallback((l: CashLine[]) => set({ ...latest.current, payments: l }), []); // eslint-disable-line react-hooks/exhaustive-deps
   const incomplete = d.opening === null || [...d.receipts, ...d.payments].some((l) => l.values.some((v) => v === null) || !l.name.trim());
   const body = useMemo(() => (incomplete ? null : { periods: d.periods, opening_cash: d.opening, minimum_cash: d.minimum ?? 0, receipts: d.receipts, payments: d.payments }), [d, incomplete]);
   const req = useDebounced(body, 150);
@@ -130,7 +145,7 @@ function CashBudget() {
       {res.error && <ErrorBox error={res.error} />}
       {incomplete && <Callout tone="warn">Fill in every cell (use 0 where there is no flow) and the opening cash. Blanks are not treated as zero.</Callout>}
       {r && <Warnings items={r.warnings} />}
-      {r && (
+      <Stable deps={[r, cur, req?.minimum_cash]} render={() => r && (
         <div className="grid cols-2">
           <Card title="Cash balance" subtitle="Closing cash with and without financing, against the minimum balance">
             <div className="chart">
@@ -141,7 +156,7 @@ function CashBudget() {
                   <YAxis {...axisProps} width={56} tickFormatter={(v) => fmtCompact(v, cur)} />
                   <Tooltip content={<ChartTooltip format={(v) => fmtMoney(v, cur)} />} />
                   <ReferenceLine y={0} stroke="var(--border-strong)" />
-                  {isNum(d.minimum) && d.minimum > 0 && <ReferenceLine y={d.minimum} stroke={C.c4} strokeDasharray="5 4" />}
+                  {isNum(req?.minimum_cash) && req.minimum_cash > 0 && <ReferenceLine y={req.minimum_cash} stroke={C.c4} strokeDasharray="5 4" />}
                   <Bar dataKey="financing" name="Financing drawn" fill={C.c3} radius={[4, 4, 0, 0]} maxBarSize={22} />
                   <Line dataKey="closing" name="Closing (with financing)" stroke={C.c1} strokeWidth={2.4} dot={{ r: 2.5 }} />
                   <Line dataKey="closing_without_financing" name="Closing (no financing)" stroke={C.neg} strokeWidth={1.8} strokeDasharray="5 4" dot={false} />
@@ -167,8 +182,8 @@ function CashBudget() {
             <Legend items={[{ label: 'Receipts', color: 'var(--chart-1)' }, { label: 'Payments', color: 'var(--negative)' }]} />
           </Card>
         </div>
-      )}
-      {r && (
+      )} />
+      <Stable deps={[r]} render={() => r && (
         <Card title="Cash budget" flush>
           <div className="table-wrap" tabIndex={0} style={{ border: 0, borderRadius: 0 }}>
             <table className="data">
@@ -183,9 +198,9 @@ function CashBudget() {
             </table>
           </div>
         </Card>
-      )}
-      <LinesEditor title="Receipts (cash in)" lines={d.receipts} periods={d.periods} onChange={(l) => set({ ...d, receipts: l })} />
-      <LinesEditor title="Payments (cash out)" lines={d.payments} periods={d.periods} onChange={(l) => set({ ...d, payments: l })} />
+      )} />
+      <LinesEditor title="Receipts (cash in)" lines={d.receipts} periods={d.periods} onChange={setReceipts} />
+      <LinesEditor title="Payments (cash out)" lines={d.payments} periods={d.periods} onChange={setPayments} />
       <Callout tone="info">Financing is drawn to restore the minimum balance in any month it is breached. Repayments and interest on that financing are not modelled in this version.</Callout>
     </div>
   );

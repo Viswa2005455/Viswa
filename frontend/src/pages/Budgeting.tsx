@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { C, ChartTooltip, Legend, axisProps, gridProps } from '../components/charts';
 import { SaveLoad } from '../components/SaveLoad';
-import { Badge, Callout, Card, ErrorBox, Field, Kpi, LearnBox, NumberField, PageHeader, Warnings } from '../components/ui';
+import { Badge, Callout, Card, ErrorBox, Field, Kpi, LearnBox, NumberField, PageHeader, Stable, Warnings } from '../components/ui';
 import { api } from '../lib/api';
 import { downloadFile, fmtCompact, fmtMoney, fmtNum, fmtPctPoints, isNum, toCSV } from '../lib/format';
 import { useSettings } from '../lib/settings';
@@ -232,7 +232,7 @@ export function Budgeting() {
         </div>
       </Card>
 
-      {r && (
+      <Stable deps={[r, cur]} render={() => r && (
         <div className="grid cols-3 mt">
           <Card className="span-2" title="Monthly profile" subtitle={`${r.months[0]} to ${r.months[11]}`}>
             <div className="chart">
@@ -266,7 +266,7 @@ export function Budgeting() {
             )}
           </Card>
         </div>
-      )}
+      )} />
 
       <div className="grid cols-2 mt" style={{ alignItems: 'start' }}>
         <Card title="Compare versions" subtitle={`Annual totals: selected version → ${v.name}`}>
