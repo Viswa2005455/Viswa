@@ -2,7 +2,7 @@
 
 This file is the source of truth for progress. Update it at the end of every working session so development can resume reliably.
 
-_Last updated: 2026-10-22 (v0.12.1 — website upgrade)_
+_Last updated: 2026-10-26 (v0.13.0 — upload reveal and 3D backdrop)_
 
 ## Environment found at the start
 
@@ -23,6 +23,12 @@ _Last updated: 2026-10-22 (v0.12.1 — website upgrade)_
 | 6. AI & reports | AI assistant ✅ (Claude Opus 5.5, 15 engine tools, consent per question), Excel (live formulas) / Word / PDF report packs ✅ | ✅ Done |
 | 7. Persistence & security | Accounts (scrypt, server-side sessions, CSRF/origin check, rate limits), PostgreSQL + Alembic, projects, saved models with versions, history, per-user isolation, retention purge, export and deletion | ✅ Done |
 | 8. Final QA | Full accessibility audit, performance, deployment hardening | ⏳ Ongoing per phase |
+
+## Upload reveal and 3D backdrop (v0.13.0)
+
+- **Upload & Analyse:** the upload response now carries the full analysis (same body as GET /api/uploads/{id}), and the page shows two panels straight away, full width: *Data found in this file* and *Calculations done*. Calculations come only from the existing engines (/api/finance/statements, /ratios, /variance, /forecast); the page only chooses inputs and formats results. Lines named exactly like a standard item are used at once; lines matched by a similar name need Confirm; rejected lines are never used. Screener exports show reported vs derived lines, with approximations opt-in. Non-tabular files (text, PDF without tables, code) show their preview and "No statement series recognised — calculations not run."
+- **Look:** a CSS-only 3D backdrop (perspective grid floor, slowly turning wireframe cubes and a ring, teal and indigo light) on a sea-glass "lagoon" canvas (#E4EDF1) in light mode and a midnight canvas (#08141E) in dark mode. Animations use transforms only and stop when reduced motion is on. Content stays on solid cards.
+- **Tests:** backend `tests/test_upload_reveal.py` (POST returns analysis; series and cells; gross margin from the statements engine = 4,120 / 12,480 × 100; ratio-engine gross margin with COGS; a text note gives no inputs); frontend `src/lib/reveal.test.ts` (matching and confirm/reject rules).
 
 ## Website upgrade (v0.12.0)
 

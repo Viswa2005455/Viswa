@@ -1,9 +1,11 @@
 import { ArrowRight, FileCode2, FileSpreadsheet, FileText, FileUp, FolderArchive, RefreshCw, Trash2, UploadCloud, X } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useSearchParams } from 'react-router-dom';
 import { CodeView } from '../components/CodeView';
 import { SheetPreview, type Sheet } from '../components/SheetPreview';
-import { Badge, Callout, Card, EmptyState, ErrorBox, PageHeader, Skeleton, Tabs, Warnings } from '../components/ui';
+import { UploadReveal, type RevealUpload } from '../components/UploadReveal';
+import { Badge, Callout, Card, EmptyState, ErrorBox, PageHeader, Skeleton, Warnings } from '../components/ui';
 import { api, uploadWithProgress } from '../lib/api';
 import { fmtBytes } from '../lib/format';
 import { useToast } from '../lib/toast';
@@ -23,7 +25,7 @@ interface Analysis {
   children?: { path: string; label: string; summary: string }[];
   valid?: boolean; error?: string | null; structure?: Record<string, unknown>; format?: string;
 }
-interface UploadRecord extends UploadSummary { sha256: string; analysis: Analysis; statement_mapping: unknown[]; variance_lines: { lines: unknown[] } | null }
+type UploadRecord = UploadSummary & Omit<RevealUpload, 'analysis'> & { sha256: string; analysis: Analysis & RevealUpload['analysis'] };
 interface Pending { key: string; file: File; progress: number; state: 'uploading' | 'processing' | 'error'; error?: string }
 
 const ACCEPT = '.xlsx,.xlsm,.xls,.csv,.tsv,.pdf,.docx,.doc,.txt,.md,.json,.xml,.py,.ipynb,.sql,.java,.js,.jsx,.ts,.tsx,.html,.css,.r,.rmd,.sas,.do,.m,.mat,.yml,.yaml,.toml,.log,.zip';
@@ -44,6 +46,10 @@ export function UploadPage() {
   const list = useAsync((signal) => api.get<{ uploads: UploadSummary[]; }>(`/api/uploads${activeId ? `?project_id=${activeId}` : ''}`, { signal }), [activeId]);
   const formats = useAsync((signal) => api.get<{ max_upload_mb: number; max_files_per_request: number }>('/api/uploads/formats', { signal }), []);
   const [pending, setPending] = useState<Pending[]>([]);
+  // The upload response already carries the full analysis, so a new file is shown without another request.
+  const [fresh, setFresh] = useState<Record<string, UploadRecord>>({});
+  // The extracted data and calculations span the full page width below the upload area.
+  const [slot, setSlot] = useState<HTMLDivElement | null>(null);
   const [over, setOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -57,11 +63,12 @@ export function UploadPage() {
       const key = `${file.name}-${file.size}-${Date.now()}-${Math.random()}`;
       setPending((p) => [...p, { key, file, progress: 0, state: 'uploading' }]);
       try {
-        const res = await uploadWithProgress<{ results: ({ ok: true; upload: UploadSummary } | { ok: false; error: string })[] }>(
+        const res = await uploadWithProgress<{ results: ({ ok: true; upload: UploadRecord } | { ok: false; error: string })[] }>(
           '/api/uploads', [file], (f) => setPending((p) => p.map((x) => x.key === key ? { ...x, progress: f, state: f >= 1 ? 'processing' : 'uploading' } : x)), { project_id: activeId });
         const r = res.results[0];
         if (r.ok) {
           setPending((p) => p.filter((x) => x.key !== key));
+          setFresh((f) => ({ ...f, [r.upload.id]: r.upload }));
           toast(`${file.name} analysed`);
           setParams({ file: r.upload.id });
         } else {
@@ -153,31 +160,31 @@ export function UploadPage() {
         </div>
 
         <div className="span-2">
-          {selected ? <FileDetail id={selected} onDeleted={() => { setParams({}); list.reload(); }} onReplace={(f) => send([f])} onMoved={list.reload} /> : (
+          {selected ? <FileDetail key={selected} id={selected} initial={fresh[selected]} slot={slot} onDeleted={() => { setParams({}); list.reload(); }} onReplace={(f) => send([f])} onMoved={list.reload} /> : (
             <Card>
               <EmptyState icon={<FileSpreadsheet size={22} />} title="Select or upload a file">
-                You'll see a preview with worksheet and cell references, detected currencies, units and periods, data-quality warnings and
-                recommended analyses. Uncertain mappings always ask for your confirmation.
+                Straight after an upload you'll see every table and number series found in the file (with worksheet and cell
+                references), then the calculations the app ran on it: formula, numbers used, result and source. Uncertain matches ask for
+                your confirmation.
               </EmptyState>
             </Card>
           )}
         </div>
       </div>
+      <div ref={setSlot} className="stack mt" />
     </div>
   );
 }
 
-function FileDetail({ id, onDeleted, onReplace, onMoved }: { id: string; onDeleted: () => void; onReplace: (f: File) => void; onMoved: () => void }) {
+function FileDetail({ id, initial, slot, onDeleted, onReplace, onMoved }: { id: string; initial?: UploadRecord; slot: HTMLElement | null; onDeleted: () => void; onReplace: (f: File) => void; onMoved: () => void }) {
   const toast = useToast();
   const { projects, reload: reloadProjects } = useProjects();
-  const rec = useAsync((signal) => api.get<UploadRecord>(`/api/uploads/${id}`, { signal }), [id]);
-  const [tab, setTab] = useState<'preview' | 'details'>('preview');
+  const rec = useAsync((signal) => api.get<UploadRecord>(`/api/uploads/${id}`, { signal }), [id], !initial);
   const replaceRef = useRef<HTMLInputElement>(null);
-  useEffect(() => setTab('preview'), [id]);
 
-  if (rec.loading && !rec.data) return <Card><Skeleton h={22} w="40%" /><div className="mt"><Skeleton h={260} /></div></Card>;
-  if (rec.error) return <ErrorBox error={rec.error} onRetry={rec.reload} />;
-  const u = rec.data!;
+  const u = rec.data ?? initial;
+  if (!u && rec.error) return <ErrorBox error={rec.error} onRetry={rec.reload} />;
+  if (!u) return <Card><Skeleton h={22} w="40%" /><div className="mt"><Skeleton h={260} /></div></Card>;
   const a = u.analysis;
 
   const del = async () => {
@@ -238,15 +245,11 @@ function FileDetail({ id, onDeleted, onReplace, onMoved }: { id: string; onDelet
             </Callout>
           </div>
         )}
-        {a.warnings && a.warnings.length > 0 && <div className="mt"><Warnings items={a.warnings} /></div>}
       </Card>
 
-      {u.status === 'processed' && (
-        <Card actions={<Tabs label="View" value={tab} onChange={setTab} options={[{ value: 'preview', label: 'Preview' }, { value: 'details', label: 'Details' }]} />}
-          title="Contents">
-          {tab === 'preview' ? <Preview a={a} ext={u.extension} errorLines={errorLines} /> : <Details a={a} />}
-        </Card>
-      )}
+      {u.status === 'processed' ? slot && createPortal(
+        <UploadReveal u={u} preview={<><Preview a={a} ext={u.extension} errorLines={errorLines} /><Details a={a} /></>} />, slot,
+      ) : a.warnings && a.warnings.length > 0 && <Warnings items={a.warnings} />}
     </div>
   );
 }
@@ -324,9 +327,12 @@ function Details({ a }: { a: Analysis }) {
   if (a.sheets) rows.push(['Tables / worksheets', String(a.sheets.length)]);
   const outline = a.outline ?? a.structure;
   return (
-    <div className="stack">
-      <div>{rows.map(([k, v]) => <div key={k} className="metric-row"><span className="muted">{k}</span><span className="v">{v}</span></div>)}</div>
-      {outline && <pre className="formula" style={{ maxHeight: 360, overflow: 'auto' }}>{JSON.stringify(outline, null, 2)}</pre>}
-    </div>
+    <details className="disclosure">
+      <summary>File details</summary>
+      <div className="body stack">
+        <div>{rows.map(([k, v]) => <div key={k} className="metric-row"><span className="muted">{k}</span><span className="v">{v}</span></div>)}</div>
+        {outline && <pre className="formula" style={{ maxHeight: 360, overflow: 'auto' }}>{JSON.stringify(outline, null, 2)}</pre>}
+      </div>
+    </details>
   );
 }

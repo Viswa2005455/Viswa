@@ -6,6 +6,7 @@ import { CURRENCIES, type Currency } from '../lib/format';
 import { useSettings } from '../lib/settings';
 import { api } from '../lib/api';
 import { SkeletonCards } from './ui';
+import { Background3D } from './Background3D';
 import { useAuth } from '../lib/auth';
 import { useProjects } from '../lib/project';
 
@@ -34,7 +35,7 @@ export function Layout() {
   let lastGroup = '';
   return (
     <div className={`shell ${open ? 'nav-open' : ''}`}>
-      <div className="app-bg" aria-hidden="true" />
+      <Background3D />
       <aside className="sidebar" aria-label="Main navigation">
         <div className="brand">
           <div className="brand-mark"><Activity size={19} strokeWidth={2.5} /></div>

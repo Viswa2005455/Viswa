@@ -43,7 +43,8 @@ async def upload(files: list[UploadFile] = File(...), project_id: str | None = F
             log_activity(db, user.id, "upload.created", project_id=u.project_id, entity_type="upload", entity_id=u.id.hex,
                          name=u.name, status=u.status)
             db.commit()
-            results.append({"ok": True, "upload": {k: v for k, v in service.full_out(u).items() if k != "analysis"}})
+            # Same body as GET /api/uploads/{id}, so the page can show the analysis without another request.
+            results.append({"ok": True, "upload": service.full_out(u)})
         except service.UploadError as e:
             db.rollback()
             results.append({"ok": False, "name": f.filename, "error": str(e)})

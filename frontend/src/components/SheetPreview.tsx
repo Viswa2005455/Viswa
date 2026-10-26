@@ -80,7 +80,12 @@ export function SheetPreview({ sheets, excel }: { sheets: Sheet[]; excel: boolea
         <details className="disclosure">
           <summary>Formulas found ({sheet.formula_count})</summary>
           <div className="body">
-            {sheet.formula_samples.map((f) => <div key={f.cell} className="mono" style={{ fontSize: 12.5 }}><b>{f.cell}</b> {f.formula}</div>)}
+            <div className="faint" style={{ fontSize: 12, marginBottom: 6 }}>Formulas are read as text; the values shown are the results saved in the file.</div>
+            {sheet.formula_samples.map((f) => (
+              <div key={f.cell} className="mono" style={{ fontSize: 12.5 }}><b>{f.cell}</b> {f.formula}{' '}
+                {calculated.has(f.cell) ? <Badge tone="warn">Recalculated by the app (no saved result)</Badge> : <Badge>Detected, not executed</Badge>}</div>
+            ))}
+            {sheet.formula_count > sheet.formula_samples.length && <div className="faint" style={{ fontSize: 12 }}>Showing the first {sheet.formula_samples.length}.</div>}
           </div>
         </details>
       )}

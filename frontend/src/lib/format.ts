@@ -93,6 +93,7 @@ export function fmtCompact(v: number | null | undefined, currency: Currency = 'I
 /** Decimal (0.1234) -> "12.34%". */
 export function fmtPct(v: number | null | undefined, digits = 2): string {
   if (!isNum(v)) return '—';
+  if (Math.abs(v * 100) < 0.5 * 10 ** -digits) v = 0; // never show "−0.0%" for rounding residue
   const s = `${Math.abs(v * 100).toFixed(digits)}%`;
   return v < 0 ? `−${s}` : s;
 }
@@ -100,6 +101,7 @@ export function fmtPct(v: number | null | undefined, digits = 2): string {
 /** Already-a-percentage (12.34) -> "12.34%". */
 export function fmtPctPoints(v: number | null | undefined, digits = 1): string {
   if (!isNum(v)) return '—';
+  if (Math.abs(v) < 0.5 * 10 ** -digits) v = 0;
   return `${v < 0 ? '−' : ''}${Math.abs(v).toFixed(digits)}%`;
 }
 
