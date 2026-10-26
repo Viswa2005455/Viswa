@@ -2,13 +2,14 @@ import { CalendarClock, Download, ExternalLink, FileCheck2, Landmark } from 'luc
 import { useState, type ReactNode } from 'react';
 import { ItrDocuments } from '../components/ItrDocuments';
 import { SaveLoad } from '../components/SaveLoad';
+import { TaxAudit } from '../components/TaxAudit';
 import { Badge, Callout, Card, ErrorBox, Field, Kpi, NumberField, PageHeader, Skeleton, Tabs } from '../components/ui';
 import { api } from '../lib/api';
 import { downloadFile, fmtMoney, fmtPct, isNum, toCSV } from '../lib/format';
 import { loadRaw, save } from '../lib/storage';
 import { useAsync, useDebounced } from '../lib/useApi';
 
-type Tab = 'form' | 'individual' | 'entity' | 'dates' | 'file';
+type Tab = 'form' | 'individual' | 'entity' | 'audit' | 'dates' | 'file';
 type N = number | null;
 const inr = (v: N | undefined) => fmtMoney(v ?? null, 'INR');
 
@@ -81,7 +82,7 @@ export function IncomeTax() {
   return (
     <div className="page">
       <PageHeader title="Income Tax" badge={state.example ? <Badge tone="sample">Example figures</Badge> : <Badge tone="accent">Your figures</Badge>}
-        subtitle={<>Which ITR form to file, old vs new regime, firm and company tax, due dates and late fees for <b>FY 2025-26 (AY 2026-27)</b> under the Income-tax Act, 1961 — each rule linked to the official page it comes from.</>}
+        subtitle={<>Which ITR form to file, old vs new regime, firm and company tax, tax audit (Form 3CB / 3CD), due dates and late fees for <b>FY 2025-26 (AY 2026-27)</b> under the Income-tax Act, 1961 — each rule linked to the official page it comes from.</>}
         actions={<>
           <SaveLoad kind="income_tax" label="tax computation" getData={() => m} onLoad={(d: Model) => { const s = withDefaults({ m: d, example: false }); setState(s); save('fis.itax', s); }} />
           <button className="btn" onClick={() => { setState({ m: EXAMPLE, example: true }); save('fis.itax', { m: EXAMPLE, example: true }); }}>Example</button>
@@ -94,12 +95,14 @@ export function IncomeTax() {
       <div className="mt">
         <Tabs label="Section" value={tab} onChange={(t) => { setTab(t); save('fis.itax.tab', t); }} options={[
           { value: 'form', label: 'Which ITR form' }, { value: 'individual', label: 'Individual / HUF tax' }, { value: 'entity', label: 'Firm & company tax' },
+          { value: 'audit', label: 'Tax audit (3CB / 3CD)' },
           { value: 'dates', label: 'Due dates & late fee' }, { value: 'file', label: 'How to file' }]} />
       </div>
       <div className="mt">
         {tab === 'form' && <ItrForm m={m} set={set} />}
         {tab === 'individual' && <Individual m={m} set={set} />}
         {tab === 'entity' && <Entity m={m} set={set} />}
+        {tab === 'audit' && <TaxAudit />}
         {tab === 'dates' && <DueDates />}
         {tab === 'file' && <HowToFile info={info.data} />}
       </div>

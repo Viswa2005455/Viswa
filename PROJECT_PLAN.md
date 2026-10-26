@@ -2,7 +2,7 @@
 
 This file is the source of truth for progress. Update it at the end of every working session so development can resume reliably.
 
-_Last updated: 2026-10-26 (v0.13.0 — upload reveal and 3D backdrop)_
+_Last updated: 2026-10-26 (v0.14.0 — ITR from documents and tax audit 3CB / 3CD)_
 
 ## Environment found at the start
 
@@ -23,6 +23,16 @@ _Last updated: 2026-10-26 (v0.13.0 — upload reveal and 3D backdrop)_
 | 6. AI & reports | AI assistant ✅ (Claude Opus 5.5, 15 engine tools, consent per question), Excel (live formulas) / Word / PDF report packs ✅ | ✅ Done |
 | 7. Persistence & security | Accounts (scrypt, server-side sessions, CSRF/origin check, rate limits), PostgreSQL + Alembic, projects, saved models with versions, history, per-user isolation, retention purge, export and deletion | ✅ Done |
 | 8. Final QA | Full accessibility audit, performance, deployment hardening | ⏳ Ongoing per phase |
+
+## ITR from documents and tax audit (v0.14.0)
+
+- **Which ITR from your documents** (Income Tax → Which ITR form): upload Form 16, 26AS, AIS/TIS, capital-gains statements, a P&L or a tax audit report. `app/files/taxdocs.py` reads them with fixed rules on the server and returns each fact with the file, page/line or cell and a masked snippet. "Found" facts are used at once; "Please confirm" facts only when ticked. The form itself is still chosen by the existing `/api/tax/itr-form` rules. Endpoint `POST /api/tax/itr-from-uploads`.
+- **Tax audit (3CB / 3CD)** (new tab): `app/finance/taxaudit.py` + `POST /api/tax/audit` and `/api/tax/audit/draft.docx`.
+  - Section 44AB for FY 2025-26: (a) business ₹1 crore / ₹10 crore with the 5% cash-receipts and cash-payments test, and the 44AD proviso (₹2 crore / ₹3 crore); (b) profession ₹50 lakh; (c) 44AE/44BB/44BBB lower profits; (d) 44ADA lower profits with income above the exemption limit; (e) 44AD(4). Each test shows its working. Form 3CA when the accounts are audited under another law, else 3CB. Due dates from Circular 07/2026 (report 21 Oct 2026, return 21 Nov 2026) and the s.271B penalty cap.
+  - Form 3CB wording with the assessee's details; the auditor's name, membership number, FRN and UDIN are never filled.
+  - Form 3CD (as amended by Notification 23/2025): all clauses, each "Filled in", "Filled — please review", "Needs your input", "Not applicable" or "Omitted". Filled from files: Part A, clause 8, clause 26 (43B dues on the balance sheet; TDS left out), clause 40 (turnover, GP, NP and stock ratios for both years with cell sources), and from a cash book / ledger (`app/files/ledger.py`): clause 21(d) s.40A(3) (₹10,000 a person a day, ₹35,000 for goods carriages), clause 21(a) heads to review, clause 31 (269SS / 269T ≥ ₹20,000, 269ST ≥ ₹2 lakh a person a day), clause 44 (registered vs unregistered payees) and the cash shares for the 44AB test. Contra entries are left out.
+  - Plain-English clause titles; the official utility has the exact wording. From tax year 2026-27 the Income-tax Act, 2025 moves the audit to section 63 (Form 26); not covered yet.
+- **Tests:** `tests/test_itr_documents.py`, `tests/test_tax_audit.py` (thresholds, cash test, 44AD proviso, 44ADA/44AD(4), 3CA vs 3CB, due dates, ledger checks and clause 40 worked by hand, PAN/GSTIN masking, access control, Word draft).
 
 ## Upload reveal and 3D backdrop (v0.13.0)
 
@@ -246,6 +256,7 @@ The app is now aimed at practising professionals: CPAs, CFA charterholders, CMAs
 - Screener import reads annual data only (quarterly results are skipped).
 - The accounting schedules assume settlement on period dates (no stub periods or accrued interest between coupon dates), and lease modifications/remeasurements are not modelled.
 
+- Tax audit: Form 3CD clauses that need records the app cannot read (TDS returns, fixed asset register, MSME status of creditors, stock register, partnership deed) are listed as "Needs your input". Ledger keyword rules (loan, freight, penalty…) can miss or over-flag entries; every flag shows its cell for checking. Rule 6DD exceptions to s.40A(3) are not applied automatically.
 - AI: live calls to Anthropic were not tested in the build environment (no key); run "Access" and "Test reply" on AI Model Health after adding a key. Health results are kept in memory per server process and reset on restart.
 
 ## Next steps (in order)

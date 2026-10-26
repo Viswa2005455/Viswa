@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import re
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -15,9 +16,11 @@ from ..auth.security import limiter
 from ..config import Settings, get_settings
 from ..db.models import User
 from ..db.session import get_db
-from ..files import service, taxdocs
+from ..files import ledger, service, taxdocs
+from ..files.routing import suggest_statement_mapping
 from ..files.registers import PURCHASE_TEMPLATE, SALES_TEMPLATE, read_register
-from ..finance import FinanceInputError, gst, incometax
+from ..finance import FinanceInputError, gst, incometax, taxaudit
+from ..reports.taxaudit_doc import build_docx
 from .base import BaseModel
 from .finance import clean
 
@@ -107,6 +110,170 @@ def itr_from_uploads(req: DocsIn, user: User = Depends(current_user), db: Sessio
         "rules": "Rule-based reading: 'found' means the document states it; 'suggested' needs your confirmation. "
                  "Questions no document answers keep your own answers.",
     }
+
+
+# ---------------------------------------------------------------- tax audit (s.44AB, Forms 3CA/3CB + 3CD)
+OptMoney = Field(default=None, ge=0, le=1e15)
+
+
+class AuditIn(BaseModel):
+    taxpayer_type: Literal["individual", "huf", "firm", "llp", "company", "aop_boi", "cooperative", "local_authority",
+                           "trust_or_institution"] = "individual"
+    activity: Literal["business", "profession", "both"] = "business"
+    business_turnover: float | None = OptMoney
+    professional_receipts: float | None = OptMoney
+    cash_receipts: float | None = OptMoney
+    total_receipts: float | None = OptMoney
+    cash_payments: float | None = OptMoney
+    total_payments: float | None = OptMoney
+    presumptive: Literal["none", "44AD", "44ADA", "44AE", "44BB", "44BBB"] = "none"
+    profit_below_presumptive: bool = False
+    opted_out_of_44ad: bool = False
+    total_income: float | None = Field(default=None, ge=-1e15, le=1e15)
+    regime: Literal["new", "old"] = "new"
+    age: Literal["below_60", "60_to_79", "80_plus"] = "below_60"
+    resident: bool = True
+    audited_under_other_law: bool | None = None
+    name: str = Field(default="", max_length=200)
+    address: str = Field(default="", max_length=500)
+    pan: str = Field(default="", max_length=10, pattern=r"^([A-Za-z]{5}\d{4}[A-Za-z])?$")
+    gstin: str = Field(default="", max_length=15, pattern=r"^(\d{2}[A-Za-z]{5}\d{4}[A-Za-z][0-9A-Za-z][Zz][0-9A-Za-z])?$")
+    nature: str = Field(default="", max_length=300)
+    upload_ids: list[str] = Field(default_factory=list, max_length=10)
+    assessment_year: AssessmentYear = "2026-27"
+
+
+GSTIN_RE = re.compile(r"\b(\d{2}[A-Z]{5}\d{4}[A-Z][0-9A-Z]Z[0-9A-Z])\b")
+ENTITY_LINE = re.compile(r"gstin|gst no|gst registration|registration no", re.I)
+
+
+def _audit(req: AuditIn, user: User, db: Session) -> dict:
+    items: dict[str, dict] = {}
+    dues: list[dict] = []
+    ledgers: list[dict] = []
+    documents: list[dict] = []
+    gstins: dict[str, dict] = {}
+    for uid in dict.fromkeys(req.upload_ids):
+        try:
+            up = service.get_upload(db, user.id, uid)
+        except service.UploadError as e:
+            raise HTTPException(400, str(e)) from e
+        if up is None:
+            raise HTTPException(404, "Upload not found.")
+        a = up.analysis or {}
+        used: list[str] = []
+        notes: list[str] = [] if up.status == "processed" else [up.error or "The file could not be read."]
+        lg = None
+        n_dues = len(dues)
+        if up.status == "processed" and up.extension in (".xlsx", ".xlsm", ".csv", ".tsv", ".txt"):
+            data = service.original_bytes(db, up)
+            if data:
+                try:
+                    lg = ledger.read_ledger(up.name, data)
+                except Exception as e:  # corrupt workbook: report, never fail the whole draft
+                    notes.append(f"Could not read it as a ledger ({type(e).__name__}).")
+        if lg and lg["rows"]:
+            chk = taxaudit.ledger_checks(lg["rows"], up.name)
+            chk.update(sheet=lg["sheet"], columns=lg["columns"], skipped=lg["skipped"], mode_source=lg["mode_source"],
+                       direction_rule=lg["direction_rule"])
+            ledgers.append(chk)
+            used.append(f"Ledger: {len(lg['rows'])} transactions")
+            if lg["mode_source"] == "cash book":
+                notes.append("No payment-mode column: every row was taken as cash because the file or sheet is called a cash book.")
+            elif not lg["mode_source"]:
+                notes.append("No payment-mode column, so cash transactions could not be identified.")
+        else:
+            mapped = suggest_statement_mapping(a.get("sheets", []), up.name, all_items=True)
+            for m in mapped:
+                if m["item"] not in items:
+                    items[m["item"]] = m
+            if mapped:
+                used.append(f"Statement lines: {len(mapped)}")
+            for sh in a.get("sheets", []):
+                for s in sh.get("series", []):
+                    lab = s.get("label") or ""
+                    if s.get("orientation") != "row" or not taxaudit.STAT_DUE.search(lab) or not taxaudit.DUE_WORDS.search(lab) \
+                            or taxaudit.NOT_43B.search(lab):
+                        continue
+                    pairs = [(v, r) for v, r in zip(s["values"], s["refs"]) if v is not None]
+                    if pairs and pairs[-1][0]:
+                        dues.append({"label": lab, "value": pairs[-1][0], "source": f"{up.name} › {sh['name']} › {pairs[-1][1]}"})
+            for line in taxdocs.lines_of(a, up.name):
+                if not ENTITY_LINE.search(line.text):
+                    continue
+                for g in GSTIN_RE.findall(line.text.upper()):
+                    gstins.setdefault(g, {"raw": g, "masked": taxaudit.mask_gstin(g),
+                                          "evidence": {"file": line.file, "where": line.where, "text": taxdocs.mask(GSTIN_RE.sub(lambda m: taxaudit.mask_gstin(m.group(1)), line.text.upper()))[:160]}})
+        if len(dues) > n_dues:
+            used.append(f"Statutory dues payable: {len(dues) - n_dues}")
+        documents.append({"upload_id": up.id.hex, "file": up.name, "used_for": used or ["Nothing usable for the tax audit"], "notes": notes[:4]})
+
+    d = req.model_dump(exclude={"name", "address", "pan", "gstin", "nature", "upload_ids", "assessment_year"})
+    inputs: list[dict] = []
+    rev = items.get("revenue")
+    if rev and req.activity != "both":
+        key = "professional_receipts" if req.activity == "profession" else "business_turnover"
+        if d[key] is None and rev["value"] is not None and rev["value"] >= 0:
+            d[key] = rev["value"]
+            d["turnover_source"] = rev["source"]
+            inputs.append({"field": key, "value": rev["value"], "source": rev["source"]})
+    full = [lg for lg in ledgers if lg.get("cash_known")]
+    if full:
+        src = ", ".join(lg["file"] for lg in full)
+        for k in ("cash_receipts", "cash_payments"):
+            if d[k] is None:
+                d[k] = sum(lg[k] for lg in full)
+                inputs.append({"field": k, "value": d[k], "source": src})
+        if all(lg["totals_complete"] for lg in full):
+            for k in ("total_receipts", "total_payments"):
+                if d[k] is None:
+                    d[k] = sum(lg[k] for lg in full)
+                    inputs.append({"field": k, "value": d[k], "source": src})
+        d["cash_source"] = src
+    profile = taxaudit.AuditProfile(**d)
+    app = taxaudit.applicability(profile)
+
+    pan = req.pan.upper()
+    gl = list(gstins.values())
+    if req.gstin:
+        g = req.gstin.upper()
+        gl.insert(0, {"raw": g, "masked": taxaudit.mask_gstin(g), "evidence": {"file": "You entered", "where": "Assessee details"}})
+    if pan:  # keep only GSTINs that belong to this PAN
+        gl = [x for x in gl if x["evidence"]["file"] == "You entered" or x["raw"][2:12] == pan]
+    entity = {"name": req.name.strip(), "address": req.address.strip(), "pan_masked": taxdocs.mask(pan) if pan else "",
+              "taxpayer_type": req.taxpayer_type, "nature": req.nature.strip(),
+              "gstins": [{k: v for k, v in x.items() if k != "raw"} for x in gl[:5]]}
+    clauses = taxaudit.clauses_3cd(entity, app, items, ledgers, dues, req.presumptive)
+    counts: dict[str, int] = {}
+    for c in clauses:
+        counts[c["status"]] = counts.get(c["status"], 0) + 1
+    return clean({
+        "year": taxaudit.YEAR, "ruleset": taxaudit.RULESET, "applicability": app, "due": taxaudit.due(dt.date.today()),
+        "entity": {k: v for k, v in entity.items() if k != "gstins"} | {"gstins": [x["masked"] for x in gl[:5]]},
+        "inputs_from_files": inputs, "documents": documents, "ledgers": ledgers,
+        "report_3cb": taxaudit.draft_3cb(entity, app["form"]), "clauses": clauses, "counts": counts,
+        "status_labels": taxaudit.SUMMARY, "sources": taxaudit.SOURCES,
+        "notes": ["A draft for your chartered accountant: only a CA in practice can sign the report and upload it with a UDIN.",
+                  "From tax year 2026-27 the Income-tax Act, 2025 moves the audit to section 63 (Form 26); this draft is for FY 2025-26."],
+    })
+
+
+@router.post("/audit")
+def audit(req: AuditIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Tax audit check and Form 3CB / 3CD draft from the user's answers and uploaded books."""
+    return _audit(req, user, db)
+
+
+@router.post("/audit/draft.docx")
+def audit_docx(req: AuditIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    body = build_docx(_audit(req, user, db))
+    return Response(body, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    headers={"Content-Disposition": 'attachment; filename="tax-audit-draft-AY2026-27.docx"'})
+
+
+@router.get("/audit/ledger-template")
+def ledger_template():
+    return Response(ledger.TEMPLATE, media_type="text/csv", headers={"Content-Disposition": 'attachment; filename="cash-book-template.csv"'})
 
 
 class IndividualIn(BaseModel):

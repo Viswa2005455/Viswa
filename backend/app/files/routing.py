@@ -66,15 +66,18 @@ def match_item(label: str) -> str | None:
     return None
 
 
-def suggest_statement_mapping(sheets: list[dict], file_name: str) -> list[dict]:
-    """For row-oriented series whose label matches a known item, propose latest & prior values."""
+def suggest_statement_mapping(sheets: list[dict], file_name: str, all_items: bool = False) -> list[dict]:
+    """For row-oriented series whose label matches a known item, propose latest & prior values.
+
+    By default only items the ratio engine uses; all_items=True also keeps lines such as gross
+    profit and profit before tax (used by the tax audit's clause 40)."""
     found: dict[str, dict] = {}
     for sheet in sheets:
         for s in sheet.get("series", []):
             if s["orientation"] != "row":
                 continue
             key = match_item(s["label"])
-            if not key or key in found or key not in ITEMS:
+            if not key or key in found or (key not in ITEMS and not all_items):
                 continue
             vals, refs, periods = s["values"], s["refs"], s["period_labels"]
             # Ignore non-period columns such as "Growth" or "% of sales" when the row has periods.
@@ -85,7 +88,7 @@ def suggest_statement_mapping(sheets: list[dict], file_name: str) -> list[dict]:
                 if len(years) > 1 and all(y is not None for y in years) and years == sorted(years, reverse=True) and years[0] != years[-1]:
                     vals, refs, periods = vals[::-1], refs[::-1], periods[::-1]  # newest-first -> oldest-first
             found[key] = {
-                "item": key, "item_label": ITEMS[key], "source_label": s["label"],
+                "item": key, "item_label": ITEMS.get(key, key.replace("_", " ").capitalize()), "source_label": s["label"],
                 "value": vals[-1], "source": f"{file_name} › {sheet['name']} › {refs[-1]}", "period": periods[-1],
                 "prior_value": vals[-2] if len(vals) >= 2 else None,
                 "prior_source": f"{file_name} › {sheet['name']} › {refs[-2]}" if len(vals) >= 2 else None,

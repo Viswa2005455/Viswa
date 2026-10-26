@@ -681,3 +681,8 @@ textarea.input { resize: vertical; min-height: 72px; font-family: inherit; line-
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+
+/* Tax audit tables: fixed columns so long clause titles wrap instead of pushing the answers off-screen */
+table.data.fixed-cols { table-layout: fixed; width: 100%; min-width: 720px; }
+table.data.fixed-cols td, table.data.fixed-cols th { white-space: normal; overflow-wrap: anywhere; vertical-align: top; }
+table.data.fixed-cols td:first-child { min-width: 0; }
