@@ -8,11 +8,14 @@ from typing import Literal
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import Field
+from sqlalchemy.orm import Session
 
 from ..auth.deps import current_user
 from ..auth.security import limiter
 from ..config import Settings, get_settings
 from ..db.models import User
+from ..db.session import get_db
+from ..files import service, taxdocs
 from ..files.registers import PURCHASE_TEMPLATE, SALES_TEMPLATE, read_register
 from ..finance import FinanceInputError, gst, incometax
 from .base import BaseModel
@@ -62,6 +65,48 @@ class ProfileIn(BaseModel):
 @router.post("/itr-form")
 def itr_form(p: ProfileIn):
     return incometax.select_itr(incometax.TaxpayerProfile(**p.model_dump(exclude={"assessment_year"})))
+
+
+class DocsIn(BaseModel):
+    upload_ids: list[str] = Field(min_length=1, max_length=10)
+
+
+@router.post("/itr-from-uploads")
+def itr_from_uploads(req: DocsIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Read the user's uploaded tax documents for the facts that decide the ITR form.
+
+    Returns each fact with its evidence (file, page/line or cell, masked text), what is only
+    suggested, and the questions no document answers. The form itself is chosen by /itr-form from
+    the answers the user confirms; nothing here is assumed."""
+    lines, documents = [], []
+    for uid in dict.fromkeys(req.upload_ids):
+        try:
+            up = service.get_upload(db, user.id, uid)
+        except service.UploadError as e:
+            raise HTTPException(400, str(e)) from e
+        if up is None:
+            raise HTTPException(404, "Upload not found.")
+        own = taxdocs.lines_of(up.analysis or {}, up.name)
+        lines += own
+        notes = list((up.analysis or {}).get("warnings", []))
+        if up.status != "processed":
+            notes.insert(0, up.error or "The file could not be read.")
+        elif not own:
+            notes.insert(0, "No readable text was found (a scanned PDF needs OCR, which is not configured here).")
+        documents.append({"upload_id": up.id.hex, "file": up.name, "label": up.label, "lines_read": len(own), "types": [], "notes": notes[:5]})
+    facts, types = taxdocs.extract(lines)
+    by_file = {t["file"]: t["types"] for t in types}
+    for d in documents:
+        d["types"] = by_file.get(d["file"], [])
+    order = list(taxdocs.QUESTIONS)
+    return {
+        "documents": documents,
+        "facts": [{"field": f.field, "question": taxdocs.QUESTIONS[f.field], "value": f.value, "status": f.status, "note": f.note,
+                   "evidence": f.evidence} for f in sorted(facts.values(), key=lambda f: order.index(f.field))],
+        "unanswered": [{"field": k, "question": q} for k, q in taxdocs.QUESTIONS.items() if k not in facts],
+        "rules": "Rule-based reading: 'found' means the document states it; 'suggested' needs your confirmation. "
+                 "Questions no document answers keep your own answers.",
+    }
 
 
 class IndividualIn(BaseModel):

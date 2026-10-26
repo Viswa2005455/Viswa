@@ -678,3 +678,6 @@ textarea.input { resize: vertical; min-height: 72px; font-family: inherit; line-
 .calc-block header { gap: 8px; flex-wrap: wrap; }
 .calc-table td { white-space: normal; vertical-align: top; min-width: 90px; }
 .calc-table td:first-child { min-width: 160px; }
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }

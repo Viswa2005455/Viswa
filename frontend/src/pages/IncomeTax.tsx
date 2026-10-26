@@ -1,5 +1,6 @@
 import { CalendarClock, Download, ExternalLink, FileCheck2, Landmark } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
+import { ItrDocuments } from '../components/ItrDocuments';
 import { SaveLoad } from '../components/SaveLoad';
 import { Badge, Callout, Card, ErrorBox, Field, Kpi, NumberField, PageHeader, Skeleton, Tabs } from '../components/ui';
 import { api } from '../lib/api';
@@ -48,7 +49,7 @@ const ENTITY = { entity: 'company', total_income: 50000000 as N, turnover_fy_202
 type Model = { profile: typeof PROFILE; income: typeof INCOME; entity: typeof ENTITY };
 const EXAMPLE: Model = { profile: PROFILE, income: INCOME, entity: ENTITY };
 
-function Select<T extends string>({ label, value, onChange, options }: { label: string; value: T; onChange: (v: T) => void; options: [T, string][] }) {
+function Select<T extends string>({ label, value, onChange, options }: { label: ReactNode; value: T; onChange: (v: T) => void; options: [T, string][] }) {
   return (
     <Field label={label}>
       <select className="input" value={value} onChange={(e) => onChange(e.target.value as T)}>
@@ -111,36 +112,41 @@ function ItrForm({ m, set }: { m: Model; set: (p: Partial<Model>) => void }) {
   const up = (x: Partial<typeof PROFILE>) => set({ profile: { ...p, ...x } });
   const r = useCalc<ItrRes>('/api/tax/itr-form', numbersOnly(p));
   const person = p.taxpayer_type === 'individual' || p.taxpayer_type === 'huf';
+  const [fromDocs, setFromDocs] = useState<string[]>(() => loadRaw('fis.itax.docs.from', []));
+  // A small marker next to every question answered from the uploaded documents.
+  const doc = (k: string, label: string) => (fromDocs.includes(k) ? <>{label} <Badge tone="info">from your documents</Badge></> : label);
   return (
+    <div className="stack">
+    <ItrDocuments profile={p} defaults={PROFILE} onApply={(patch, from) => { set({ profile: { ...p, ...patch } as typeof PROFILE }); setFromDocs(from); save('fis.itax.docs.from', from); }} />
     <div className="grid cols-2">
       <Card title="Taxpayer" subtitle="Answer for the financial year 2025-26">
         <div className="grid cols-2" style={{ gap: 10 }}>
-          <Select label="Taxpayer type" value={p.taxpayer_type} onChange={(v) => up({ taxpayer_type: v })} options={[['individual', 'Individual'], ['huf', 'HUF'], ['firm', 'Partnership firm'], ['llp', 'LLP'], ['company', 'Company'], ['aop_boi', 'AOP / BOI'], ['cooperative', 'Co-operative society'], ['local_authority', 'Local authority'], ['trust_or_institution', 'Trust / institution / political party']]} />
-          <Select label="Residential status" value={p.residential_status} onChange={(v) => up({ residential_status: v })} options={[['resident', 'Resident (ordinarily)'], ['rnor', 'Resident but not ordinarily resident'], ['non_resident', 'Non-resident']]} />
-          <NumberField label="Total income (₹)" value={p.total_income} onChange={(v) => up({ total_income: v })} />
-          <NumberField label="Number of house properties" value={p.house_properties} onChange={(v) => up({ house_properties: v })} />
-          <NumberField label="LTCG under 112A (₹)" value={p.ltcg_112a} onChange={(v) => up({ ltcg_112a: v })} />
-          <NumberField label="Agricultural income (₹)" value={p.agricultural_income} onChange={(v) => up({ agricultural_income: v })} />
-          {p.business_income && person && <Select label="Business income computed under" value={p.presumptive} onChange={(v) => up({ presumptive: v })} options={[['none', 'Regular books (not presumptive)'], ['44AD', '44AD (business)'], ['44ADA', '44ADA (profession)'], ['44AE', '44AE (goods carriages)']]} />}
+          <Select label={doc('taxpayer_type', 'Taxpayer type')} value={p.taxpayer_type} onChange={(v) => up({ taxpayer_type: v })} options={[['individual', 'Individual'], ['huf', 'HUF'], ['firm', 'Partnership firm'], ['llp', 'LLP'], ['company', 'Company'], ['aop_boi', 'AOP / BOI'], ['cooperative', 'Co-operative society'], ['local_authority', 'Local authority'], ['trust_or_institution', 'Trust / institution / political party']]} />
+          <Select label={doc('residential_status', 'Residential status')} value={p.residential_status} onChange={(v) => up({ residential_status: v })} options={[['resident', 'Resident (ordinarily)'], ['rnor', 'Resident but not ordinarily resident'], ['non_resident', 'Non-resident']]} />
+          <NumberField label={doc('total_income', 'Total income (₹)')} value={p.total_income} onChange={(v) => up({ total_income: v })} />
+          <NumberField label={doc('house_properties', 'Number of house properties')} value={p.house_properties} onChange={(v) => up({ house_properties: v })} />
+          <NumberField label={doc('ltcg_112a', 'LTCG under 112A (₹)')} value={p.ltcg_112a} onChange={(v) => up({ ltcg_112a: v })} />
+          <NumberField label={doc('agricultural_income', 'Agricultural income (₹)')} value={p.agricultural_income} onChange={(v) => up({ agricultural_income: v })} />
+          {p.business_income && person && <Select label={doc('presumptive', 'Business income computed under')} value={p.presumptive} onChange={(v) => up({ presumptive: v })} options={[['none', 'Regular books (not presumptive)'], ['44AD', '44AD (business)'], ['44ADA', '44ADA (profession)'], ['44AE', '44AE (goods carriages)']]} />}
           {p.taxpayer_type === 'firm' && <Select label="Firm income computed under" value={p.presumptive} onChange={(v) => up({ presumptive: v, business_income: v !== 'none' })} options={[['none', 'Regular books'], ['44AD', '44AD'], ['44ADA', '44ADA'], ['44AE', '44AE']]} />}
         </div>
         <div className="stack mt" style={{ gap: 6 }}>
           {person && <>
-            <Check label="Salary or pension" checked={p.salary_or_pension} onChange={(v) => up({ salary_or_pension: v })} />
-            <Check label="Income from business or profession" checked={p.business_income} onChange={(v) => up({ business_income: v })} />
-            <Check label="Interest, salary, bonus or commission from a partnership firm" checked={p.partner_remuneration} onChange={(v) => up({ partner_remuneration: v })} />
-            <Check label="Short-term capital gains" checked={p.stcg} onChange={(v) => up({ stcg: v })} />
-            <Check label="Other capital gains (property, debt funds, unlisted shares…)" checked={p.other_capital_gains} onChange={(v) => up({ other_capital_gains: v })} />
-            <Check label="Director of a company" checked={p.director} onChange={(v) => up({ director: v })} />
-            <Check label="Held unlisted equity shares during the year" checked={p.unlisted_equity} onChange={(v) => up({ unlisted_equity: v })} />
-            <Check label="Foreign assets, foreign income or signing authority abroad" checked={p.foreign_assets_or_income} onChange={(v) => up({ foreign_assets_or_income: v })} />
-            <Check label="Accounts required to be audited (sets the due date)" checked={p.accounts_audited} onChange={(v) => up({ accounts_audited: v })} />
-            <Check label="TDS under 194N (cash withdrawals)" checked={p.tds_194n} onChange={(v) => up({ tds_194n: v })} />
-            <Check label="Tax on ESOPs deferred" checked={p.esop_tax_deferred} onChange={(v) => up({ esop_tax_deferred: v })} />
-            <Check label="Losses to carry forward or brought-forward losses" checked={p.losses_to_carry_forward} onChange={(v) => up({ losses_to_carry_forward: v })} />
+            <Check label={doc('salary_or_pension', "Salary or pension")} checked={p.salary_or_pension} onChange={(v) => up({ salary_or_pension: v })} />
+            <Check label={doc('business_income', "Income from business or profession")} checked={p.business_income} onChange={(v) => up({ business_income: v })} />
+            <Check label={doc('partner_remuneration', "Interest, salary, bonus or commission from a partnership firm")} checked={p.partner_remuneration} onChange={(v) => up({ partner_remuneration: v })} />
+            <Check label={doc('stcg', "Short-term capital gains")} checked={p.stcg} onChange={(v) => up({ stcg: v })} />
+            <Check label={doc('other_capital_gains', "Other capital gains (property, debt funds, unlisted shares…)")} checked={p.other_capital_gains} onChange={(v) => up({ other_capital_gains: v })} />
+            <Check label={doc('director', "Director of a company")} checked={p.director} onChange={(v) => up({ director: v })} />
+            <Check label={doc('unlisted_equity', "Held unlisted equity shares during the year")} checked={p.unlisted_equity} onChange={(v) => up({ unlisted_equity: v })} />
+            <Check label={doc('foreign_assets_or_income', "Foreign assets, foreign income or signing authority abroad")} checked={p.foreign_assets_or_income} onChange={(v) => up({ foreign_assets_or_income: v })} />
+            <Check label={doc('accounts_audited', "Accounts required to be audited (sets the due date)")} checked={p.accounts_audited} onChange={(v) => up({ accounts_audited: v })} />
+            <Check label={doc('tds_194n', "TDS under 194N (cash withdrawals)")} checked={p.tds_194n} onChange={(v) => up({ tds_194n: v })} />
+            <Check label={doc('esop_tax_deferred', "Tax on ESOPs deferred")} checked={p.esop_tax_deferred} onChange={(v) => up({ esop_tax_deferred: v })} />
+            <Check label={doc('losses_to_carry_forward', "Losses to carry forward or brought-forward losses")} checked={p.losses_to_carry_forward} onChange={(v) => up({ losses_to_carry_forward: v })} />
           </>}
-          {p.taxpayer_type === 'company' && <Check label="Claims exemption under section 11 (charitable company)" checked={p.claims_section_11} onChange={(v) => up({ claims_section_11: v })} />}
-          <Check label="Must file under section 139(4A)–(4D) (trust, political party, research body, university)" checked={p.files_under_139_4a_to_4d} onChange={(v) => up({ files_under_139_4a_to_4d: v })} />
+          {p.taxpayer_type === 'company' && <Check label={doc('claims_section_11', "Claims exemption under section 11 (charitable company)")} checked={p.claims_section_11} onChange={(v) => up({ claims_section_11: v })} />}
+          <Check label={doc('files_under_139_4a_to_4d', "Must file under section 139(4A)–(4D) (trust, political party, research body, university)")} checked={p.files_under_139_4a_to_4d} onChange={(v) => up({ files_under_139_4a_to_4d: v })} />
         </div>
       </Card>
       <Card title="Form to file" subtitle="Assessment year 2026-27">
@@ -159,6 +165,7 @@ function ItrForm({ m, set }: { m: Model; set: (p: Partial<Model>) => void }) {
           </div>
         )}
       </Card>
+    </div>
     </div>
   );
 }
