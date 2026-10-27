@@ -22,7 +22,7 @@ function signalUnauthorized(path: string) {
   if (!path.startsWith('/api/auth/')) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
 }
 
-const BACKEND_DOWN = 'The app\'s backend is not answering. Check the "Finance Studio - BACKEND" window: if it is closed, run start-windows.bat again; if it shows an error, send a screenshot of it.';
+const BACKEND_DOWN = 'The app\'s backend is not answering. It restarts by itself within a few seconds, so try again shortly. If the "Finance Studio - BACKEND" window is closed, run start-windows.bat again; if it shows a red error, send a screenshot of it.';
 const DEFAULT_TIMEOUT_MS = 60_000;
 
 async function once<T>(path: string, init: RequestInit, opts: RequestOpts): Promise<T> {

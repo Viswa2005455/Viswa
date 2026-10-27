@@ -91,7 +91,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\stop-old-copy.
 if errorlevel 2 goto :end
 echo.
 echo Starting the app. Two new windows will open - keep them open while you use the app.
-start "Finance Studio - BACKEND (keep open)" /D "%~dp0backend" cmd /k uv run uvicorn app.main:app --port 8000
+start "Finance Studio - BACKEND (keep open)" /D "%~dp0backend" powershell -NoProfile -ExecutionPolicy Bypass -NoExit -File "%~dp0scripts\run-backend.ps1"
 start "Finance Studio - WEBSITE (keep open)" /D "%~dp0frontend" cmd /k npm run dev
 echo Waiting for the app to be ready...
 powershell -NoProfile -Command "for($i=0;$i -lt 180;$i++){ try { Invoke-WebRequest -UseBasicParsing 'http://localhost:8000/api/health' -TimeoutSec 2 | Out-Null; try { Invoke-WebRequest -UseBasicParsing 'http://localhost:5173' -TimeoutSec 2 | Out-Null; exit 0 } catch {} } catch {}; Start-Sleep 1 }; exit 1"
