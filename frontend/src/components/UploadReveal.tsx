@@ -50,7 +50,10 @@ const val = (v: number | null | undefined) => (isNum(v) ? fmtNum(v, Math.abs(v) 
 
 /** Everything the parser extracted from one upload, then the calculations the engines ran on it. */
 export function UploadReveal({ u, preview }: { u: RevealUpload; preview: ReactNode }) {
-  const tabular = u.status === 'processed' && u.analysis.kind === 'tabular' && !!u.analysis.sheets?.length;
+  // Spreadsheets, and documents (e.g. an annual report PDF) whose statements were read with their years.
+  const tabular = u.status === 'processed' && !!u.analysis.sheets?.length &&
+    (u.analysis.kind === 'tabular' || !!u.statements?.length || !!u.statement_mapping?.length);
+  const leftOut = [...new Set((u.statements ?? []).flatMap((s) => s.projected_left_out ?? []))];
   const isScreener = tabular && !!u.analysis.sheets?.some((s) => s.name.toLowerCase() === 'data sheet');
   const items = useAsync((signal) => api.get<{ items: Record<string, { label: string }> }>('/api/finance/statements/items', { signal }), [], tabular);
   const screener = useAsync((signal) => api.post<ScreenerImport>(`/api/analysis/screener/${u.id}`, {}, { signal }), [u.id], isScreener);
@@ -86,6 +89,7 @@ export function UploadReveal({ u, preview }: { u: RevealUpload; preview: ReactNo
           <div><dt>Currency</dt><dd>{f.currency.length ? `${f.currency.join(', ')} (from the file — please confirm)` : 'Not stated in the file'}</dd></div>
           <div><dt>Units</dt><dd>{f.units.length ? `${f.units.join(', ')} (from the file — please confirm)` : 'Not stated in the file'}</dd></div>
           <div><dt>Periods</dt><dd>{f.periods.length ? f.periods.join(', ') : 'Not detected'}</dd></div>
+          {leftOut.length > 0 && <div><dt>Projections left out</dt><dd>{leftOut.join(', ')} — the model's own forecasts; calculations use the actual years only</dd></div>}
           <div><dt>Status</dt><dd>{u.status === 'processed' ? 'Read successfully' : 'Could not be read'}</dd></div>
         </dl>
         {warnings.length > 0 && <div className="mt"><Warnings items={warnings} /></div>}

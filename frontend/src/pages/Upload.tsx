@@ -22,7 +22,7 @@ interface Analysis {
   outline?: Record<string, unknown> & { syntax_errors?: { line: number; message: string }[]; issues?: string[] };
   cells?: { index: number; type: string; source: string }[]; syntax_errors?: { cell: number; line: number; message: string }[];
   members?: { name: string; size: number; is_dir: boolean; blocked: string | null; note?: string }[];
-  children?: { path: string; label: string; summary: string }[];
+  children?: { path: string; label: string; summary: string; upload_id?: string; note?: string }[];
   valid?: boolean; error?: string | null; structure?: Record<string, unknown>; format?: string;
 }
 type UploadRecord = UploadSummary & Omit<RevealUpload, 'analysis'> & { sha256: string; analysis: Analysis & RevealUpload['analysis'] };
@@ -63,14 +63,18 @@ export function UploadPage() {
       const key = `${file.name}-${file.size}-${Date.now()}-${Math.random()}`;
       setPending((p) => [...p, { key, file, progress: 0, state: 'uploading' }]);
       try {
-        const res = await uploadWithProgress<{ results: ({ ok: true; upload: UploadRecord } | { ok: false; error: string })[] }>(
+        const res = await uploadWithProgress<{ results: ({ ok: true; upload: UploadRecord; from_archive?: string } | { ok: false; error: string })[] }>(
           '/api/uploads', [file], (f) => setPending((p) => p.map((x) => x.key === key ? { ...x, progress: f, state: f >= 1 ? 'processing' : 'uploading' } : x)), { project_id: activeId });
         const r = res.results[0];
         if (r.ok) {
           setPending((p) => p.filter((x) => x.key !== key));
-          setFresh((f) => ({ ...f, [r.upload.id]: r.upload }));
-          toast(`${file.name} analysed`);
-          setParams({ file: r.upload.id });
+          const all = res.results.filter((x): x is { ok: true; upload: UploadRecord; from_archive?: string } => x.ok);
+          setFresh((f) => ({ ...f, ...Object.fromEntries(all.map((x) => [x.upload.id, x.upload])) }));
+          // For a ZIP, open the first file inside it that has numbers to calculate with.
+          const inside = all.filter((x) => x.from_archive);
+          const pick = inside.find((x) => x.upload.statements?.length || x.upload.statement_mapping?.length) ?? inside[0] ?? r;
+          toast(inside.length ? `${file.name}: ${inside.length} file(s) inside analysed separately` : `${file.name} analysed`);
+          setParams({ file: pick.upload.id });
         } else {
           setPending((p) => p.map((x) => x.key === key ? { ...x, state: 'error', error: r.error } : x));
         }
@@ -290,7 +294,11 @@ function Preview({ a, ext, errorLines }: { a: Analysis; ext: string; errorLines:
               return (
                 <tr key={m.name}>
                   <td className="mono">{m.name}</td><td className="r">{m.is_dir ? '' : fmtBytes(m.size)}</td>
-                  <td>{m.blocked ? <Badge tone="neg">Blocked: {m.blocked}</Badge> : child ? <Badge tone="accent">{child.label} · {child.summary}</Badge> : <span className="faint">{m.note ?? (m.is_dir ? 'folder' : 'not analysed')}</span>}</td>
+                  <td>{m.blocked ? <Badge tone="neg">Blocked: {m.blocked}</Badge> : child ? (
+                    <span className="row" style={{ gap: 8, flexWrap: 'wrap' }}><Badge tone="accent">{child.label} · {child.summary}</Badge>
+                      {child.upload_id && <Link to={`/upload?file=${child.upload_id}`}>Open its data and calculations</Link>}
+                      {child.note && <span className="faint">{child.note}</span>}</span>
+                  ) : <span className="faint">{m.note ?? (m.is_dir ? 'folder' : 'not analysed')}</span>}</td>
                 </tr>
               );
             })}

@@ -15,7 +15,7 @@ export interface SheetData {
   series?: Series[]; warnings: string[];
 }
 export interface Mapping { item: string; item_label: string; source_label: string; value: number; source: string; period: string; prior_value: number | null; prior_source: string | null; prior_period: string | null }
-export interface SuggestedStatement { sheet: string; statement: Stmt; periods: string[]; reordered: boolean; lines: { label: string; key: string | null; values: (number | null)[]; source: string | null }[] }
+export interface SuggestedStatement { sheet: string; statement: Stmt; periods: string[]; reordered: boolean; projected_left_out?: string[]; lines: { label: string; key: string | null; values: (number | null)[]; source: string | null }[] }
 export interface VarianceSuggestion { sheet: string; budget_column: string; actual_column: string; lines: { name: string; kind: 'revenue' | 'expense'; budget: number; actual: number; source: string }[]; note: string }
 export interface Recommendation { module: string; route: string; reason: string; confidence: string }
 export interface ScreenerLine { label: string; statement: Stmt; key: string | null; values: (number | null)[]; source?: string | null }
@@ -50,6 +50,44 @@ export function isExactMatch(sourceLabel: string, ...itemLabels: string[]): bool
     .map(norm).filter(Boolean).includes(a));
 }
 
+/** Names that companies print in audited statements (US GAAP, IFRS, Ind AS Schedule III) for each item.
+ * They mean the item exactly, so they count as reported. Looser synonyms ("Total income", "Stock",
+ * "Debtors", "Reserves", "Interest") still need the user's confirmation. */
+const STANDARD_NAMES: Record<string, string[]> = {
+  revenue: ['revenues', 'revenue from operations', 'net sales', 'net revenues', 'net revenue', 'sales'],
+  cogs: ['cost of sales', 'cost of revenue', 'cost of revenues', 'cost of goods sold'],
+  gross_profit: ['gross profit'],
+  operating_income: ['income from operations', 'operating income', 'operating profit', 'profit from operations'],
+  interest_expense: ['interest expense', 'finance costs', 'finance cost'],
+  pretax_income: ['income before income taxes', 'profit before tax', 'income before taxes', 'earnings before income taxes'],
+  net_income: ['net income', 'net income loss', 'net loss', 'net profit', 'profit for the year', 'profit for the period', 'net earnings'],
+  depreciation_amortization: ['depreciation and amortization', 'depreciation and amortisation', 'depreciation and amortization expense',
+    'depreciation and amortisation expense'],
+  cash: ['cash and cash equivalents'],
+  receivables: ['accounts receivable', 'accounts receivable net', 'trade receivables'],
+  inventory: ['inventories', 'inventory'],
+  current_assets: ['current assets'],
+  total_assets: ['assets'],
+  accounts_payable: ['accounts payable', 'trade payables'],
+  current_liabilities: ['current liabilities'],
+  total_liabilities: ['liabilities'],
+  long_term_debt: ['long term borrowings', 'long term debt'],
+  total_equity: ['stockholders equity', 'shareholders equity', 'equity'],
+  operating_cash_flow: ['net cash provided by operating activities', 'cash provided by operating activities', 'net cash from operating activities',
+    'net cash generated from operating activities', 'cash from operating activities', 'cash from operations', 'net cash provided by used in operating activities'],
+  investing_cash_flow: ['cash used in investing activities', 'net cash used in investing activities', 'cash from investing activities',
+    'net cash from investing activities', 'net cash provided by used in investing activities', 'net cash used in provided by investing activities'],
+  financing_cash_flow: ['cash used in financing activities', 'net cash used in financing activities', 'cash from financing activities',
+    'net cash from financing activities', 'net cash provided by used in financing activities', 'net cash used in provided by financing activities'],
+  net_change_in_cash: ['net change in cash', 'net increase decrease in cash and cash equivalents'],
+  capex: ['purchases of property and equipment', 'purchases of property equipment and software', 'purchase of property plant and equipment', 'capital expenditures', 'capital expenditure'],
+};
+
+/** Reported as-is: the item's own name, or a name companies print for exactly that item. */
+export function isReportedName(key: string, sourceLabel: string, ...itemLabels: string[]): boolean {
+  return isExactMatch(sourceLabel, ...itemLabels) || (STANDARD_NAMES[key] ?? []).includes(norm(sourceLabel));
+}
+
 export type Decision = 'confirmed' | 'rejected';
 export interface MapRow {
   key: string; itemLabel: string; sourceLabel: string; value: number | null; prior: number | null; period: string | null;
@@ -63,7 +101,7 @@ export function mapRows(statementMapping: Mapping[], statements: SuggestedStatem
     const [, sheet, cell] = m.source.split(' › ');
     out.push({ key: m.item, itemLabel: m.item_label, sourceLabel: m.source_label, value: m.value, prior: m.prior_value, period: m.period,
       cell: cell ?? null, sheet: sheet ?? null,
-      certainty: isExactMatch(m.source_label, m.item_label, itemLabels[m.item] ?? '') ? 'reported' : 'suggested' });
+      certainty: isReportedName(m.item, m.source_label, m.item_label, itemLabels[m.item] ?? '') ? 'reported' : 'suggested' });
   }
   for (const s of statements) {
     for (const l of s.lines) {
@@ -72,7 +110,7 @@ export function mapRows(statementMapping: Mapping[], statements: SuggestedStatem
       const refs = refsFor(sheets, s.sheet, l.label, s.periods);
       out.push({ key: l.key, itemLabel: itemLabels[l.key] ?? l.key, sourceLabel: l.label, value: i >= 0 ? l.values[i] : null,
         prior: i > 0 ? l.values[i - 1] : null, period: i >= 0 ? s.periods[i] : null, cell: i >= 0 ? refs?.[i] ?? null : null, sheet: s.sheet,
-        certainty: isExactMatch(l.label, itemLabels[l.key] ?? '') ? 'reported' : 'suggested' });
+        certainty: isReportedName(l.key, l.label, itemLabels[l.key] ?? '') ? 'reported' : 'suggested' });
     }
   }
   return out;
@@ -271,14 +309,18 @@ function cashBlock(inp: EngineInput, rep: StatementReport, route: string | null)
 
 interface Ratio { key: string; name: string; category: string; formula: string; unit: string; value: number | null; status: 'ok' | 'missing' | 'undefined'; inputs: Record<string, number>; steps: string; notes: string[]; missing: string[] }
 
+const COSTS = new Set(['cogs', 'interest_expense', 'sga', 'operating_expenses', 'depreciation_amortization', 'capex']);
+
 export function ratioData(inp: EngineInput): { data: Record<string, number>; sources: Record<string, string> } {
   const data: Record<string, number> = {}, sources: Record<string, string> = {};
   for (const l of inp.lines) {
     if (!l.key || l.key in data) continue;
     const i = lastIndex(l.values);
     if (i < 0) continue;
-    data[l.key] = l.values[i] as number;
-    sources[l.key] = `${cellSource(l, i)} (${inp.periods[i]})`;
+    // Models often show costs as negatives; the ratio engine expects a cost as a positive amount.
+    const flip = COSTS.has(l.key) && (l.values[i] as number) < 0;
+    data[l.key] = flip ? -(l.values[i] as number) : l.values[i] as number;
+    sources[l.key] = `${cellSource(l, i)} (${inp.periods[i]})${flip ? ' · shown as a negative in the file, used as a positive cost' : ''}`;
     if (AVERAGEABLE.has(l.key) && i > 0 && isNum(l.values[i - 1])) {
       data[`${l.key}_prior`] = l.values[i - 1] as number;
       sources[`${l.key}_prior`] = `${cellSource(l, i - 1)} (${inp.periods[i - 1]})`;

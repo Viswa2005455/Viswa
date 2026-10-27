@@ -39,12 +39,15 @@ async def upload(files: list[UploadFile] = File(...), project_id: str | None = F
         # Read at most limit + 1 bytes so oversized files are rejected without buffering them fully.
         data = await f.read(settings.max_upload_bytes + 1)
         try:
-            u = service.save_upload(db, user.id, project.id if project else None, f.filename or "unnamed", data, settings)
-            log_activity(db, user.id, "upload.created", project_id=u.project_id, entity_type="upload", entity_id=u.id.hex,
-                         name=u.name, status=u.status)
+            saved = service.save_upload_with_members(db, user.id, project.id if project else None, f.filename or "unnamed", data, settings)
+            for u in saved:
+                log_activity(db, user.id, "upload.created", project_id=u.project_id, entity_type="upload", entity_id=u.id.hex,
+                             name=u.name, status=u.status)
             db.commit()
             # Same body as GET /api/uploads/{id}, so the page can show the analysis without another request.
-            results.append({"ok": True, "upload": service.full_out(u)})
+            # Files found inside a ZIP follow the archive, marked with the archive's id.
+            results.append({"ok": True, "upload": service.full_out(saved[0])})
+            results += [{"ok": True, "upload": service.full_out(m), "from_archive": saved[0].id.hex} for m in saved[1:]]
         except service.UploadError as e:
             db.rollback()
             results.append({"ok": False, "name": f.filename, "error": str(e)})

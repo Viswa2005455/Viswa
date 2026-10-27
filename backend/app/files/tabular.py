@@ -64,8 +64,40 @@ def _is_blank(v: Any) -> bool:
     return v is None or (isinstance(v, str) and not v.strip())
 
 
+_PERIOD_HEAD = re.compile(r"^(?:FY|CY)?\s?'?(?:19|20)\d{2}(?:\s?[-/]\s?\d{2,4})?\s?(?:[AEFPB]|PF)?$", re.I)
+
+
+def _year_value(c: Any) -> int | None:
+    if isinstance(c, bool):
+        return None
+    if isinstance(c, (int, float)) and float(c).is_integer() and 1990 <= c <= 2100:
+        return int(c)
+    return None
+
+
+def _period_header_row(grid: list[list[Any]]) -> int | None:
+    """A row of period headings ("FY2023A", "2025", 2024 as a number), most cells after the label
+    column being periods. Years typed as numbers count only when they run consecutively."""
+    for i, row in enumerate(grid[:25]):
+        cells = [c for c in row[1:] if not _is_blank(c)]
+        if len(cells) < 2:
+            continue
+        text = [c for c in cells if isinstance(c, str) and _PERIOD_HEAD.match(c.strip())]
+        years = [_year_value(c) for c in cells]
+        nums = [y for y in years if y is not None]
+        consecutive = len(nums) >= 2 and len(set(nums)) == len(nums) and all(abs(a - b) == 1 for a, b in zip(nums, nums[1:]))
+        n = len(text) + (len(nums) if consecutive else 0)
+        if n >= 2 and n / len(cells) >= 0.6:
+            return i
+    return None
+
+
 def _header_row(grid: list[list[Any]]) -> int | None:
-    """Index of the first row that looks like a header (>=2 non-empty cells, mostly text)."""
+    """Index of the header row: a row of period headings if there is one, else the first row that
+    looks like a header (>=2 non-empty cells, mostly text)."""
+    p = _period_header_row(grid)
+    if p is not None:
+        return p
     for i, row in enumerate(grid[:25]):
         cells = [c for c in row if not _is_blank(c)]
         if len(cells) >= 2 and sum(isinstance(c, str) and parse_number(c)[0] is None for c in cells) / len(cells) >= 0.6:
@@ -91,8 +123,8 @@ def analyse_grid(name: str, grid: list[list[Any]], *, excel: bool, formulas: dic
 
     hdr = _header_row(grid)
     data_start = (hdr + 1) if hdr is not None else 0
-    headers = [str(grid[hdr][c]).strip() if hdr is not None and not _is_blank(grid[hdr][c]) else f"Column {get_column_letter(c + 1)}"
-               for c in range(n_cols)]
+    headers = [(str(_year_value(grid[hdr][c]) or grid[hdr][c]).strip()) if hdr is not None and not _is_blank(grid[hdr][c])
+               else f"Column {get_column_letter(c + 1)}" for c in range(n_cols)]
 
     columns = []
     for c in range(n_cols):

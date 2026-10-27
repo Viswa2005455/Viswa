@@ -63,7 +63,7 @@ def _parse(name: str, ext: str, category: str, label: str, data: bytes, settings
     raise UploadError(f"No parser for {label}.")
 
 
-def _parse_zip(data: bytes, settings: Settings) -> dict:
+def _parse_zip(data: bytes, settings: Settings, keep: dict[str, bytes] | None = None) -> dict:
     zf = archive.check_zip_container(data, settings.fis_zip_max_entries, settings.fis_zip_max_uncompressed_mb * 1024 * 1024)
     members = archive.list_members(zf)
     children = []
@@ -86,6 +86,8 @@ def _parse_zip(data: bytes, settings: Settings) -> dict:
             parsed = _parse(name, det.extension, det.category, det.label, content, settings)
             children.append({"path": m["name"], "label": det.label, "category": det.category,
                              "summary": _summary(parsed), "parsed": parsed})
+            if keep is not None:
+                keep[m["name"]] = content
         except Exception as e:  # one bad member should not fail the archive
             m["note"] = f"Could not parse: {type(e).__name__}"
     warnings = [f"Blocked '{m['name']}' ({m['blocked']})." for m in members if m["blocked"]]
@@ -146,6 +148,14 @@ def full_out(u: Upload) -> dict:
 
 
 def save_upload(db: Session, user_id: uuid.UUID, project_id: uuid.UUID | None, filename: str, data: bytes, settings: Settings) -> Upload:
+    return save_upload_with_members(db, user_id, project_id, filename, data, settings, split_archive=False)[0]
+
+
+def save_upload_with_members(db: Session, user_id: uuid.UUID, project_id: uuid.UUID | None, filename: str, data: bytes,
+                             settings: Settings, split_archive: bool = True) -> list[Upload]:
+    """Save one upload. A ZIP archive is listed, and with split_archive each file it contains that
+    the app can read is also saved as its own upload (with its own data and calculations), named
+    "<archive> › <file>". Returns the upload followed by those member uploads."""
     if len(data) > settings.max_upload_bytes:
         raise UploadError(f"File exceeds the {settings.fis_max_upload_mb} MB limit.")
     if not data:
@@ -156,8 +166,12 @@ def save_upload(db: Session, user_id: uuid.UUID, project_id: uuid.UUID | None, f
         raise UploadError(det.error)
 
     status, error = "processed", None
+    member_bytes: dict[str, bytes] = {}
     try:
-        parsed = _parse(name, det.extension, det.category, det.label, data, settings)
+        if det.category == "archive":
+            parsed = _parse_zip(data, settings, member_bytes if split_archive else None)
+        else:
+            parsed = _parse(name, det.extension, det.category, det.label, data, settings)
     except archive.UnsafeArchive as e:
         raise UploadError(str(e)) from e
     except Exception as e:
@@ -165,6 +179,28 @@ def save_upload(db: Session, user_id: uuid.UUID, project_id: uuid.UUID | None, f
         status = "failed"
         error = f"The file could not be parsed ({type(e).__name__}). It may be corrupt, password-protected or in an unexpected format."
 
+    members: list[Upload] = []
+    if split_archive and status == "processed" and det.category == "archive":
+        stem = Path(name).stem[:60]
+        for child in parsed.get("children", []):
+            content = member_bytes.get(child["path"])
+            base = safe_display_name(child["path"])
+            if content is None or len(content) > settings.max_upload_bytes:
+                child["note"] = f"Larger than the {settings.fis_max_upload_mb} MB limit, so not added as its own file."
+                continue
+            cdet = detect(base, content[:8192])
+            cparsed = child.pop("parsed")
+            members.append(_record(db, user_id, project_id, f"{stem} › {base[-110:]}", cdet, content, cparsed, "processed", None, settings))
+            child["upload_id"] = members[-1].id.hex
+        if members:
+            parsed.setdefault("warnings", []).insert(0, f"{len(members)} file(s) in this archive were also added as separate uploads, "
+                                                        "each with its own data and calculations.")
+    u = _record(db, user_id, project_id, name, det, data, parsed, status, error, settings)
+    return [u, *members]
+
+
+def _record(db: Session, user_id: uuid.UUID, project_id: uuid.UUID | None, name: str, det, data: bytes, parsed: dict,
+            status: str, error: str | None, settings: Settings) -> Upload:
     sheets = parsed.get("sheets", []) or []
     now = utcnow()
     u = Upload(

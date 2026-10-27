@@ -2,7 +2,7 @@
 
 This file is the source of truth for progress. Update it at the end of every working session so development can resume reliably.
 
-_Last updated: 2026-10-26 (v0.14.0 — ITR from documents and tax audit 3CB / 3CD)_
+_Last updated: 2026-10-27 (v0.14.2 — calculations from ZIPs, financial models and annual-report PDFs)_
 
 ## Environment found at the start
 
@@ -23,6 +23,18 @@ _Last updated: 2026-10-26 (v0.14.0 — ITR from documents and tax audit 3CB / 3C
 | 6. AI & reports | AI assistant ✅ (Claude Opus 5.5, 15 engine tools, consent per question), Excel (live formulas) / Word / PDF report packs ✅ | ✅ Done |
 | 7. Persistence & security | Accounts (scrypt, server-side sessions, CSRF/origin check, rate limits), PostgreSQL + Alembic, projects, saved models with versions, history, per-user isolation, retention purge, export and deletion | ✅ Done |
 | 8. Final QA | Full accessibility audit, performance, deployment hardening | ⏳ Ongoing per phase |
+
+## Calculations from ZIPs, models and annual reports (v0.14.2)
+
+Found with a real upload (a ZIP of three Crocs three-statement models, a prompts workbook and the Crocs 2025 10-K) that showed data but no calculations:
+
+- **ZIP archives:** each readable file inside is now saved as its own upload ("<archive> › <file>") with its own data and calculations; the archive lists them with links. Member analysis is not stored twice.
+- **Model periods:** headings such as FY2023A / FY2026E are recognised (the trailing A/E/F/P/B broke the year match), years typed as numbers (2024, 2025) count as headings, and a row of period headings is preferred over a banner row ("Historical / Forecast"). When a model mixes actual and projected years, calculations use the actual years; the projected ones are listed as left out. Before, ratio inputs came from the last column (FY2030E).
+- **Annual-report PDFs:** statement pages (operations / income, balance sheet, cash flows, Ind AS profit and loss) anywhere in the document are found with PDFium text (≈1 s for 117 pages) and read line by line under their year line; each value cites "page N, line M". PDF table rows with only generic column names are no longer used (the Crocs MD&A table gave "Revenues = −1.5", a % change). Results now show for PDFs, not only spreadsheets.
+- **Signs and names:** costs printed as negatives (cost of sales, interest, capex) are used as positive costs, with a note. Names printed in audited statements ("Revenues", "Cost of sales", "Income from operations", "Net cash provided by operating activities", "Purchases of property, equipment, and software"…) count as reported; loose synonyms ("Total income", "Debtors") still need Confirm. On a cash flow statement, "Inventories" / "Accounts payable" (changes) are never taken as balances.
+- **Checked against the 10-K:** gross margin 2,357,055 / 4,040,647 = 58.3%; current ratio 885,883 / 700,129 = 1.27×; free cash flow 710,431 − 51,231 = 659,200; the three models give the same FY2025A figures.
+- **Windows:** the BACKEND window runs `scripts/run-backend.ps1` (QuickEdit off, restarts the backend if it stops); the start script recognises a frozen backend.
+- **Tests:** `tests/test_upload_models_and_reports.py`.
 
 ## ITR from documents and tax audit (v0.14.0)
 
@@ -242,7 +254,7 @@ The app is now aimed at practising professionals: CPAs, CFA charterholders, CMAs
   - Rate limits are in memory, per process.
 - Uploads: the original bytes stay on local disk, so multiple servers would need shared storage (e.g. S3).
 - Excel formulas without saved results are recalculated only for common functions (see `formula_eval.py`). Lookups (VLOOKUP, XLOOKUP, INDEX/MATCH), whole-column ranges and date functions are left blank and reported. Full recalculation via LibreOffice is a possible future step.
-- PDF table extraction uses pdfplumber and can misalign columns, so the app warns you to confirm figures. Scanned PDFs need OCR, which is not configured.
+- PDF table extraction uses pdfplumber and can misalign columns, so the app warns you to confirm figures; statement pages are read as text lines instead. Tables are extracted from the first 60 pages only (statement pages are found anywhere). Statements whose year headings are not on a line of their own (e.g. "As at 31 March 2025") are not yet read as text. Scanned PDFs need OCR, which is not configured.
 - Legacy `.doc` files are not parsed (the app asks you to save them as `.docx`). `.mat` files are stored but not previewed.
 - Forecasting does not model seasonality yet.
 - **Budgeting:**

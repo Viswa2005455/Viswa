@@ -51,6 +51,112 @@ def detect_financial_context(text: str) -> dict:
     }
 
 
+# ---------------------------------------------------------------- statement pages read as text
+# Annual reports print statements as text lines ("Revenues $ 4,040,647 $ 4,102,108") under a line of
+# years ("2025 2024 2023"). Table extraction often loses that year line, so statement pages are
+# also read line by line: a line is kept only when it has exactly one amount per year.
+STATEMENT_TITLE = re.compile(
+    r"\b(?:consolidated |standalone |combined )?(?:statements? of (?:consolidated )?(?:operations|income|earnings|"
+    r"profit and loss|comprehensive (?:income|loss)|cash flows?|financial position)|balance sheets?|profit and loss (?:statement|account))\b",
+    re.I)
+_SKIP_TITLE = re.compile(r"stockholders|shareholders|changes in equity", re.I)
+_YEAR_TOKEN = re.compile(r"^(?:FY\s?)?(?:19|20)\d{2}$", re.I)
+_AMOUNT_TOKEN = re.compile(r"^\(?-?\d{1,3}(?:,\d{2,3})*(?:\.\d+)?\)?%?$|^\(?-?\d+(?:\.\d+)?\)?$")
+_DASH = {"—", "–", "-", "--"}
+
+
+def _amount(tok: str) -> float | None:
+    neg = tok.startswith("(") and tok.endswith(")")
+    v = float(tok.strip("()%").replace(",", ""))
+    return -v if neg else v
+
+
+def _year_line(line: str) -> list[str] | None:
+    toks = [t for t in re.split(r"\s+", line.strip()) if t]
+    if len(toks) >= 2 and all(_YEAR_TOKEN.match(t) for t in toks):
+        return toks
+    return None
+
+
+def statement_tables(page_texts: list[str]) -> list[dict]:
+    """Statement pages as grids: [["Line item", "2025", "2024"], [label, amount, amount], ...]."""
+    out = []
+    for i, text in enumerate(page_texts):
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        head = " ".join(lines[:8])
+        m = STATEMENT_TITLE.search(head)
+        if not m or _SKIP_TITLE.search(head):
+            continue
+        title = m.group(0)
+        units = re.search(r"\((?:[^()]*\b(?:in )?(?:thousands|millions|lakhs|crores|billions)\b[^()]*)\)", head, re.I)
+        years: list[str] | None = None
+        rows: list[list] = []
+        line_no: list[int] = []
+        pending = ""
+        for n, ln in enumerate(lines, 1):
+            y = _year_line(ln)
+            if y:
+                if years and rows:
+                    break  # a second year header starts another table on the page
+                years = y
+                continue
+            if not years:
+                continue
+            toks = ln.split()
+            vals: list[float | None] = []
+            k = len(toks)
+            while k > 0:
+                t = toks[k - 1]
+                if t == "$" or t in ("₹", "Rs.", "Rs"):
+                    k -= 1
+                    continue
+                if t in _DASH:
+                    vals.append(None)
+                elif _AMOUNT_TOKEN.match(t) and not t.endswith("%"):
+                    vals.append(_amount(t))
+                else:
+                    break
+                k -= 1
+            label = " ".join(toks[:k]).rstrip(" $:")
+            if not vals:
+                # a label that continues on the next line
+                pending = "" if ln.endswith(":") else ln
+                continue
+            if pending and label[:1].islower():
+                label = f"{pending} {label}"
+            pending = ""
+            if len(vals) != len(years) or not label or all(v is None for v in vals):
+                continue
+            rows.append([label, *reversed(vals)])
+            line_no.append(n)
+        if years and len(rows) >= 3:
+            name = f"Page {i + 1} · {title[:1].upper()}{title[1:].lower()}"
+            out.append({"page": i + 1, "title": title, "years": years, "units": units.group(0) if units else None,
+                        "grid": [["Line item", *years], *rows], "lines": line_no, "name": name})
+    return out
+
+
+def _page_texts_fast(data: bytes) -> list[str] | None:
+    """Text of every page with PDFium (bundled with pdfplumber): about a second for a 100-page report."""
+    try:
+        import pypdfium2 as pdfium
+    except ImportError:
+        return None
+    try:
+        doc = pdfium.PdfDocument(data)
+        texts = []
+        for i in range(len(doc)):
+            page = doc[i]
+            tp = page.get_textpage()
+            texts.append(tp.get_text_range())
+            tp.close()
+            page.close()
+        doc.close()
+        return texts
+    except Exception:
+        return None
+
+
 def parse_pdf(data: bytes) -> dict:
     import pdfplumber
 
@@ -79,6 +185,26 @@ def parse_pdf(data: bytes) -> dict:
         if empty_pages:
             warnings.append(f"No extractable text on page(s) {', '.join(map(str, empty_pages[:20]))}. "
                             "They may be scanned images; OCR is not configured on this server.")
+    # Financial statements anywhere in the document (also beyond the first pages), read as text.
+    fast = _page_texts_fast(data)
+    found = statement_tables(fast if fast is not None else all_text)
+    stmt_sheets = []
+    for st in found:
+        sh = analyse_grid(st["name"], st["grid"], excel=False)
+        sh["source"] = {"page": st["page"], "kind": "statement text", "units": st["units"], "lines": st["lines"]}
+        for se in sh["series"]:  # "row 3, col 2" in the rebuilt table -> the line on the PDF page
+            refs = []
+            for r in se["refs"]:
+                m = re.match(r"row (\d+), col (\d+)", r or "")
+                k = int(m.group(1)) - 2 if m else -1
+                refs.append(f"line {st['lines'][k]}" if m and 0 <= k < len(st["lines"]) else r)
+            se["refs"] = refs
+        stmt_sheets.append(sh)
+    if stmt_sheets:
+        pages_found = ", ".join(str(st["page"]) for st in found)
+        warnings.insert(0, f"Financial statements read from page(s) {pages_found}, line by line with their year headings"
+                           + (f" {found[0]['units']}" if found[0]["units"] else "") + ".")
+    sheets = stmt_sheets + sheets  # statements first, so they are preferred over MD&A tables
     joined = "\n".join(all_text)
     if sheets:
         warnings.append("Numbers extracted from PDF tables can be misaligned. Confirm figures against the source page before relying on them.")
