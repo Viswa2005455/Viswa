@@ -176,7 +176,8 @@ def analyse_grid(name: str, grid: list[list[Any]], *, excel: bool, formulas: dic
                     refs.append(ref(r, c))
                     plabels.append(headers[c])
                     calc += (r, c) in calculated
-            if len(vals) >= 2:
+            # One number counts when its column is a year ("FY2025"): many statements show a single year.
+            if len(vals) >= 2 or (len(vals) == 1 and _PERIOD_HEAD.match(plabels[0].strip())):
                 series.append({"id": f"row:{r}", "label": label.strip(), "orientation": "row", "values": vals,
                                "refs": refs, "period_labels": plabels, "calculated_values": calc})
             if len(series) >= 300:

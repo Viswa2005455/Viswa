@@ -165,3 +165,19 @@ def test_cash_flow_page_gives_capex_but_not_balances():
     m = {x["item"]: x for x in suggest_statement_mapping([sh], "10k.pdf", all_items=True)}
     assert "inventory" not in m and m["operating_cash_flow"]["value"] == 710431
     assert m["capex"]["value"] == 51231  # printed as (51,231): an outflow, used as a positive amount
+
+
+def test_single_year_cash_flow_statement_is_read():
+    grid = [["Line item", "FY2025"], ["Net income", 126], ["Net cash from operating activities", 120], ["Capital expenditure", -76],
+            ["Note: amounts in lakhs", None]]
+    sh = analyse_grid("Cash Flow", grid, excel=True)
+    st = suggest_statements([sh], "cf.xlsx")[0]
+    keys = {line["label"]: (line["key"], line["values"]) for line in st["lines"]}
+    assert st["statement"] == "cashflow" and st["periods"] == ["FY2025"]
+    assert keys["Net cash from operating activities"] == ("operating_cash_flow", [120])
+    m = {x["item"]: x for x in suggest_statement_mapping([sh], "cf.xlsx", all_items=True)}
+    assert m["operating_cash_flow"]["value"] == 120 and m["operating_cash_flow"]["prior_value"] is None
+    assert m["capex"]["value"] == 76
+    # a lone number under a heading that is not a year is still not a series
+    other = analyse_grid("Notes", [["Item", "Amount"], ["Deposit", 5000]], excel=True)
+    assert not [s for s in other["series"] if s["orientation"] == "row"]

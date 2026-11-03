@@ -2,7 +2,7 @@
 
 This file is the source of truth for progress. Update it at the end of every working session so development can resume reliably.
 
-_Last updated: 2026-11-03 (v0.14.3 — full re-check from a fresh install)_
+_Last updated: 2026-11-03 (v0.14.4 — test-data pack; single-year statements)_
 
 ## Environment found at the start
 
@@ -23,6 +23,13 @@ _Last updated: 2026-11-03 (v0.14.3 — full re-check from a fresh install)_
 | 6. AI & reports | AI assistant ✅ (Claude Opus 5.5, 15 engine tools, consent per question), Excel (live formulas) / Word / PDF report packs ✅ | ✅ Done |
 | 7. Persistence & security | Accounts (scrypt, server-side sessions, CSRF/origin check, rate limits), PostgreSQL + Alembic, projects, saved models with versions, history, per-user isolation, retention purge, export and deletion | ✅ Done |
 | 8. Final QA | Full accessibility audit, performance, deployment hardening | ⏳ Ongoing per phase |
+
+## Test-data pack (v0.14.4)
+
+A pack of fictional test files with an answer sheet (expected results and how each is worked out) was built and every answer confirmed in the running app. Found while building it:
+- A statement with a single year column (common for cash flow statements) was ignored, because a row needed two numbers to count. A single number now counts when its column heading is a year.
+- "Retained earnings" and "Income tax" now count as reported names (they waited for Confirm).
+- Test: `tests/test_upload_models_and_reports.py::test_single_year_cash_flow_statement_is_read`.
 
 ## Full re-check from a fresh install (v0.14.3)
 
