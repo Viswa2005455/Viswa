@@ -61,6 +61,9 @@ const STANDARD_NAMES: Record<string, string[]> = {
   interest_expense: ['interest expense', 'finance costs', 'finance cost'],
   pretax_income: ['income before income taxes', 'profit before tax', 'income before taxes', 'earnings before income taxes'],
   net_income: ['net income', 'net income loss', 'net loss', 'net profit', 'profit for the year', 'profit for the period', 'net earnings'],
+  income_tax: ['income tax expense', 'income tax expense benefit', 'provision for income taxes', 'tax expense'],
+  other_income: ['other income', 'other income expense net', 'other income net'],
+  ppe: ['property and equipment net', 'property plant and equipment', 'property plant and equipment net'],
   depreciation_amortization: ['depreciation and amortization', 'depreciation and amortisation', 'depreciation and amortization expense',
     'depreciation and amortisation expense'],
   cash: ['cash and cash equivalents'],
@@ -83,9 +86,17 @@ const STANDARD_NAMES: Record<string, string[]> = {
   capex: ['purchases of property and equipment', 'purchases of property equipment and software', 'purchase of property plant and equipment', 'capital expenditures', 'capital expenditure'],
 };
 
+/** Printed names that carry a qualifier after the standard words ("Accounts receivable, net of allowances of $28,136…"). */
+const STANDARD_PREFIXES: Record<string, string[]> = {
+  receivables: ['accounts receivable net of allowance', 'trade receivables net of allowance'],
+  share_capital: ['common stock par value'],
+};
+
 /** Reported as-is: the item's own name, or a name companies print for exactly that item. */
 export function isReportedName(key: string, sourceLabel: string, ...itemLabels: string[]): boolean {
-  return isExactMatch(sourceLabel, ...itemLabels) || (STANDARD_NAMES[key] ?? []).includes(norm(sourceLabel));
+  const n = norm(sourceLabel);
+  return isExactMatch(sourceLabel, ...itemLabels) || (STANDARD_NAMES[key] ?? []).includes(n)
+    || (STANDARD_PREFIXES[key] ?? []).some((p) => n.startsWith(p));
 }
 
 export type Decision = 'confirmed' | 'rejected';

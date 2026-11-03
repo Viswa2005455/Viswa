@@ -22,9 +22,14 @@ from sqlalchemy.orm import Session
 
 from ..config import Settings
 from ..db.models import Activity, AuthSession, Upload, UploadBlob, utcnow
-from . import archive, documents, tabular
+from . import archive, documents, tabular, taxdocs
 from .detect import EXTENSIONS, detect, safe_display_name
-from .routing import recommend, suggest_statement_mapping, suggest_statements, suggest_variance_lines
+from .routing import (
+    recommend,
+    suggest_statement_mapping,
+    suggest_statements,
+    suggest_variance_lines,
+)
 
 ID_LEN = 32
 
@@ -136,15 +141,39 @@ def parse_upload_id(upload_id: str) -> uuid.UUID:
     return uuid.UUID(hex=upload_id)
 
 
+def _masked(obj, hits: list[int]):
+    """PAN and Aadhaar numbers are masked in everything the API returns about an upload (the stored
+    original is unchanged, so server-side tools such as the ITR and tax-audit readers still work)."""
+    if isinstance(obj, str):
+        m = taxdocs.mask(obj)
+        if m != obj:
+            hits[0] += 1
+        return m
+    if isinstance(obj, dict):
+        return {k: _masked(v, hits) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_masked(v, hits) for v in obj]
+    return obj
+
+
 def summary_out(u: Upload) -> dict:
+    return _masked(_summary_out(u), [0])
+
+
+def _summary_out(u: Upload) -> dict:
     return {"id": u.id.hex, "name": u.name, "extension": u.extension, "category": u.category, "label": u.label, "size": u.size,
             "uploaded_at": u.uploaded_at, "expires_at": u.expires_at, "status": u.status, "error": u.error, "summary": u.summary,
             "recommendations": u.recommendations, "project_id": str(u.project_id) if u.project_id else None}
 
 
 def full_out(u: Upload) -> dict:
-    return {**summary_out(u), "sha256": u.sha256, "statement_mapping": u.statement_mapping, "variance_lines": u.variance_lines,
-            "statements": u.statements, "analysis": u.analysis}
+    hits = [0]
+    out = _masked({**_summary_out(u), "statement_mapping": u.statement_mapping, "variance_lines": u.variance_lines,
+                   "statements": u.statements, "analysis": u.analysis}, hits)
+    out["sha256"] = u.sha256
+    if hits[0] and isinstance(out.get("analysis"), dict):
+        out["analysis"]["warnings"] = ["PAN and Aadhaar numbers in this file are shown masked.", *out["analysis"].get("warnings", [])]
+    return out
 
 
 def save_upload(db: Session, user_id: uuid.UUID, project_id: uuid.UUID | None, filename: str, data: bytes, settings: Settings) -> Upload:
@@ -275,7 +304,7 @@ def all_series(db: Session, user_id: uuid.UUID, project_id: uuid.UUID | None = N
                             "label": s["label"], "orientation": s["orientation"], "values": s["values"],
                             "period_labels": s["period_labels"], "refs": s["refs"],
                             "source": f"{rec.name} › {sheet['name']} › {first}–{last}"})
-    return out
+    return _masked(out, [0])
 
 
 def purge_expired(db: Session, settings: Settings) -> dict:

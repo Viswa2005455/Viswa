@@ -2,7 +2,7 @@
 
 This file is the source of truth for progress. Update it at the end of every working session so development can resume reliably.
 
-_Last updated: 2026-10-27 (v0.14.2 — calculations from ZIPs, financial models and annual-report PDFs)_
+_Last updated: 2026-11-03 (v0.14.3 — full re-check from a fresh install)_
 
 ## Environment found at the start
 
@@ -23,6 +23,21 @@ _Last updated: 2026-10-27 (v0.14.2 — calculations from ZIPs, financial models 
 | 6. AI & reports | AI assistant ✅ (Claude Opus 5.5, 15 engine tools, consent per question), Excel (live formulas) / Word / PDF report packs ✅ | ✅ Done |
 | 7. Persistence & security | Accounts (scrypt, server-side sessions, CSRF/origin check, rate limits), PostgreSQL + Alembic, projects, saved models with versions, history, per-user isolation, retention purge, export and deletion | ✅ Done |
 | 8. Final QA | Full accessibility audit, performance, deployment hardening | ⏳ Ongoing per phase |
+
+## Full re-check from a fresh install (v0.14.3)
+
+Everything was run again from a clean copy, as a new user would: `start-mac-linux.sh` (uv sync, database migration, npm install, start) on the local SQLite database; then every page and the main calculations with data.
+
+- **Automated:** backend 357 tests on PostgreSQL and on SQLite, typecheck, 15 frontend tests, production build, `npm audit` (0 vulnerabilities), `uv lock --check` and `npm ci` (the Docker build steps; Docker itself is not available here), ruff (3 unused names removed).
+- **Production mode:** refuses SQLite and the development database password; security headers set; API docs not exposed; private data needs sign-in.
+- **Every page (29 routes)** in light and dark mode at 1440 px and 390 px: no errors, no NaN/undefined, no horizontal scroll, axe clean. Every page with pre-filled numbers is labelled as example data.
+- **Hand-checked calculations (30):** NPV −21.04, IRR 8.896%, payback 2.6; WACC 9.6%; CAPM 14.2%; DCF EV 2,957.14; linear forecast; variance; bond price 950.26 and duration 2.777; Black–Scholes call 10.4506 / put 5.5735; DSO/DIO/DPO/CCC; flexible budget; CVP break-even 1,000 units; GSTR-3B; income tax (new regime ₹1,05,300, old ₹2,15,280, 87A rebate and marginal relief ₹10,400); company tax (25% ₹26,00,000, 115BAA ₹25,16,800); ITR-1 vs ITR-2. On the Crocs 10-K: Beneish −3.358 and Altman Z'' 3.722 match hand calculations.
+- **Real files:** the user's ZIP (three models and the 10-K), GSTR-1 from the sales template, 2B reconciliation, tax audit draft, Form 16 → ITR.
+- **Fixed in this pass:**
+  - Spreadsheet injection: text from users or files that starts like a formula (= + - @) was written into Excel reports as a live formula; it is now stored as text (leading apostrophe), and control characters are removed from Excel and Word exports.
+  - PAN and Aadhaar numbers are now masked in every upload response (preview, file list, series), not only in the ITR and tax-audit features; the stored original is unchanged.
+  - More 10-K names recognised (receivables "net of allowances", "Property and equipment, net", "Income tax expense (benefit)", "Other income (expense), net", common stock), so the Beneish score runs on a 10-K.
+- **Tests added:** export safety (`tests/test_reports.py`), masking (`tests/test_itr_documents.py`).
 
 ## Calculations from ZIPs, models and annual reports (v0.14.2)
 

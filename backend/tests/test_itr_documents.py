@@ -100,3 +100,16 @@ def test_another_users_upload_is_not_readable(client):
     from tests.conftest import register  # a second account
     register(client, email="other@example.com")
     assert client.post("/api/tax/itr-from-uploads", json={"upload_ids": [uid]}).status_code == 404
+
+
+def test_upload_responses_mask_pan_and_aadhaar(client):
+    text = b"FORM NO. 16\nPAN of the Employee: ABCPK5678L\nAadhaar: 1234 5678 9012\nGross Salary 11,40,000\n"
+    r = client.post("/api/uploads", files=[("files", ("ABCPK5678L-form16.txt", text))]).json()["results"][0]
+    up = r["upload"]
+    for body in (str(up), str(client.get(f"/api/uploads/{up['id']}").json()), str(client.get("/api/uploads").json()),
+                 str(client.get("/api/uploads/series").json())):
+        assert "ABCPK5678L" not in body and "1234 5678 9012" not in body
+    assert "XXXPX####L" in str(up) and up["analysis"]["warnings"][0].startswith("PAN and Aadhaar")
+    # the stored original is unchanged, so the server-side ITR reader still sees the PAN type
+    f = {x["field"]: x for x in client.post("/api/tax/itr-from-uploads", json={"upload_ids": [up["id"]]}).json()["facts"]}
+    assert f["taxpayer_type"]["value"] == "individual"

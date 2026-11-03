@@ -97,3 +97,28 @@ def test_report_endpoints(client):
 
 def test_reports_require_sign_in(anon_client):
     assert anon_client.post("/api/reports/excel", json={}).status_code == 401
+
+
+def test_formula_like_text_from_files_is_never_a_live_formula_in_exports(client):
+    """Spreadsheet injection: a label such as =cmd|' /C calc'!A0 read from an uploaded file must
+    reach Excel as text. Control characters (which Excel and Word reject) are removed."""
+    import io as _io
+
+    import docx as _docx
+    from openpyxl import load_workbook as _load
+
+    body = {"company": '=HYPERLINK("http://evil.example")', "periods": ["2024", "2025"], "prepared_by": "@me\x07",
+            "memo": "=1+1\nFine paragraph",
+            "lines": [{"label": "=cmd|' /C calc'!A0", "statement": "income", "key": None, "values": [1, 2], "source": "+x"},
+                      {"label": "Revenue\x0b", "statement": "income", "key": "revenue", "values": [100, 120]},
+                      {"label": "Net income", "statement": "income", "key": "net_income", "values": [10, 12]}]}
+    x = client.post("/api/reports/excel", json=body)
+    assert x.status_code == 200, x.text
+    wb = _load(_io.BytesIO(x.content))
+    texts = {c.value for ws in wb for row in ws.iter_rows() for c in row if isinstance(c.value, str)}
+    assert "'=cmd|' /C calc'!A0" in texts and "'+x" in texts and "Revenue" in texts and "'=1+1" in texts
+    assert not any(t.startswith("=HYPERLINK") or "cmd|" in t and t.startswith("=") for t in texts)
+    # the app's own live formulas are still there
+    assert any(t.startswith("=IFERROR(Statements!") for t in texts)
+    w = client.post("/api/reports/word", json=body)
+    assert w.status_code == 200 and "'=HYPERLINK" in "\n".join(p.text for p in _docx.Document(_io.BytesIO(w.content)).paragraphs)

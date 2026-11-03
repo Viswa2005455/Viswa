@@ -8,6 +8,7 @@ from docx import Document
 from docx.shared import Pt, RGBColor
 
 from ..finance.taxaudit import _inr
+from .builder import _CONTROL
 
 
 def build_docx(r: dict) -> bytes:
@@ -37,7 +38,7 @@ def build_docx(r: dict) -> bytes:
     doc.add_heading(cb["title"], level=1)
     doc.add_paragraph().add_run(cb["note"]).italic = True
     for p in cb["paragraphs"]:
-        doc.add_paragraph(p)
+        doc.add_paragraph(_CONTROL.sub("", p))
     for f in cb["auditor_fields"]:
         doc.add_paragraph(f"{f}: ____________________")
     doc.add_paragraph(cb["auditor_note"])
@@ -59,9 +60,9 @@ def build_docx(r: dict) -> bytes:
             ans = ans or f"[Needs: {c['needed']}]"
         if c.get("note"):
             ans += f"\nNote: {c['note']}"
-        cells[2].text = ans
+        cells[2].text = _CONTROL.sub("", ans)  # party names from uploaded ledgers may carry control characters
         srcs = sorted({x["source"] for x in c["rows"] if x.get("source")} | {e.get("file", "") for e in c["evidence"]} - {""})
-        cells[3].text = labels.get(c["status"], c["status"]) + (f"\n{'; '.join(srcs)[:300]}" if srcs else "")
+        cells[3].text = _CONTROL.sub("", labels.get(c["status"], c["status"]) + (f"\n{'; '.join(srcs)[:300]}" if srcs else ""))
     doc.add_heading("Notes", level=2)
     for n in r["notes"]:
         doc.add_paragraph(n, style="List Bullet")

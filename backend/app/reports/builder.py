@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import datetime as dt
 import io
-from dataclasses import dataclass, field
+import re
+from dataclasses import dataclass, field, replace
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt, RGBColor
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.styles import Alignment, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from ..finance import forensic, profile
@@ -56,6 +57,25 @@ class ReportInput:
     sections: list[str] = field(default_factory=lambda: ["statements", "ratios", "red_flags", "valuation", "memo"])
 
 
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
+def _safe(v: str | None) -> str | None:
+    """Text from the user or an uploaded file, made safe for a spreadsheet or Word file: control
+    characters (which openpyxl and Word reject) are removed, and text that starts like a formula
+    (= + - @) gets a leading apostrophe so Excel shows it as text and never runs it."""
+    if v is None:
+        return None
+    v = _CONTROL.sub("", v)
+    return "'" + v if v[:1] in ("=", "+", "-", "@") and not re.fullmatch(r"-?\d+(\.\d+)?", v) else v
+
+
+def _safe_input(inp: ReportInput) -> ReportInput:
+    return replace(inp, company=_safe(inp.company), prepared_by=_safe(inp.prepared_by) or "", units=_safe(inp.units),
+                   currency=_safe(inp.currency), periods=[_safe(p) for p in inp.periods], memo=_CONTROL.sub("", inp.memo) if inp.memo else inp.memo,
+                   lines=[replace(l, label=_safe(l.label), source=_safe(l.source)) for l in inp.lines])
+
+
 def _items(inp: ReportInput) -> dict[str, list[float | None]]:
     items = {l.key: l.values for l in inp.lines if l.key}
     for k, v in inp.market.items():
@@ -75,6 +95,7 @@ def _hdr(ws, row: int, values: list, fill=NAVY):
 
 
 def build_excel(inp: ReportInput) -> bytes:
+    inp = _safe_input(inp)
     wb = Workbook()
     n = len(inp.periods)
     unit_label = f"{inp.currency} {inp.units}" if inp.units != "units" else inp.currency
@@ -235,7 +256,7 @@ def build_excel(inp: ReportInput) -> bytes:
         me["A1"] = "Analyst memo"
         me["A1"].font = Font(bold=True, size=13, color=NAVY)
         for i, para in enumerate([p for p in inp.memo.split("\n")], 3):
-            me.cell(row=i, column=1, value=para).alignment = Alignment(wrap_text=True, vertical="top")
+            me.cell(row=i, column=1, value=_safe(para)).alignment = Alignment(wrap_text=True, vertical="top")
         me.column_dimensions["A"].width = 120
 
     wb.calculation.fullCalcOnLoad = True  # Excel / LibreOffice recalculate every formula when the file opens
@@ -337,6 +358,7 @@ def _fmt(v, kind="num"):
 
 
 def build_word(inp: ReportInput) -> bytes:
+    inp = _safe_input(inp)
     doc = Document()
     style = doc.styles["Normal"]
     style.font.name = "Calibri"
@@ -348,7 +370,6 @@ def build_word(inp: ReportInput) -> bytes:
     p.runs[0].font.color.rgb = RGBColor(0x47, 0x55, 0x69)
     items = _items(inp)
     prof = profile.build(inp.periods, items)
-    last = len(inp.periods) - 1
 
     doc.add_heading("Key metrics", level=1)
     keys = [("revenue", "num"), ("net_income", "num"), ("revenue_growth", "pct"), ("ebitda_margin", "pct"), ("net_margin", "pct"),
