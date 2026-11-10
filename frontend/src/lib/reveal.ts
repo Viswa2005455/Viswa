@@ -64,7 +64,7 @@ const STANDARD_NAMES: Record<string, string[]> = {
   retained_earnings: ['retained earnings'],
   income_tax: ['income tax', 'income tax expense', 'income tax expense benefit', 'provision for income taxes', 'tax expense'],
   other_income: ['other income', 'other income expense net', 'other income net'],
-  ppe: ['property and equipment net', 'property plant and equipment', 'property plant and equipment net'],
+  ppe: ['fixed assets', 'property and equipment net', 'property plant and equipment', 'property plant and equipment net'],
   depreciation_amortization: ['depreciation and amortization', 'depreciation and amortisation', 'depreciation and amortization expense',
     'depreciation and amortisation expense'],
   cash: ['cash and cash equivalents'],

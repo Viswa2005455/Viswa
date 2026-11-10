@@ -79,7 +79,7 @@ export function UploadReveal({ u, preview }: { u: RevealUpload; preview: ReactNo
           <Stat label="Tables" value={String(sheets.length)} />
           <Stat label="Number series" value={String(series.length)} />
           <Stat label="Formulas found" value={String(formulas)} />
-          <Stat label="Periods" value={f.periods.length ? `${f.periods[0]} – ${f.periods[f.periods.length - 1]}` : 'Not detected'} />
+          <Stat label="Periods" value={!f.periods.length ? 'Not detected' : f.periods.length === 1 ? f.periods[0] : `${f.periods[0]} – ${f.periods[f.periods.length - 1]}`} />
           <Stat label="Warnings" value={String(warnings.length)} tone={warnings.length ? 'warn' : undefined} />
         </div>
         <dl className="facts mt">

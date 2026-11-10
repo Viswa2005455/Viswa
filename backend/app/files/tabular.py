@@ -222,7 +222,7 @@ def analyse_grid(name: str, grid: list[list[Any]], *, excel: bool, formulas: dic
     }
 
 
-def parse_xlsx(data: bytes) -> dict:
+def parse_xlsx(data: bytes, name: str = "") -> dict:
     wb_f = load_workbook(io.BytesIO(data), read_only=True, data_only=False)
     wb_v = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
     raw = []  # (title, grid, formulas, number formats, truncated)
@@ -258,6 +258,7 @@ def parse_xlsx(data: bytes) -> dict:
 
     computed = _calculate_missing_results(raw)
     sheets = []
+    raw_grids: list[tuple[str, list[list[Any]]]] = []
     for title, grid, formulas, fmts, truncated in raw:
         results = computed.get(title, {})
         for (r, c), v in results.items():
@@ -272,7 +273,33 @@ def parse_xlsx(data: bytes) -> dict:
         grid = [row[:width] for row in grid]
         sheets.append(analyse_grid(title, grid, excel=True, formulas=formulas, number_formats=fmts, truncated=truncated,
                                    calculated={k for k in results if k[0] < len(grid)}))
-    return {"kind": "tabular", "sheets": sheets}
+        raw_grids.append((title, grid))
+    return _with_t_accounts({"kind": "tabular", "sheets": sheets}, raw_grids, name)
+
+
+def _with_t_accounts(parsed: dict, grids: list[tuple[str, list[list[Any]]]], name: str) -> dict:
+    """Two-sided (To / By) accounts in the workbook become one-period statements placed first, so the
+    statement and ratio engines use them. Each value keeps its original cell."""
+    from . import taccounts
+
+    found, notes = taccounts.statement_sheets(grids, name)
+    if not found:
+        return parsed
+    extra = []
+    for st in found:
+        sh = analyse_grid(st["name"], st["grid"], excel=False)
+        sh["source"] = st["source"]
+        for se in sh["series"]:  # "row 3, col 2" in the rebuilt table -> the cell in the original sheet
+            refs = []
+            for ref in se["refs"]:
+                m = re.match(r"row (\d+), col (\d+)", ref or "")
+                k = int(m.group(1)) - 2 if m else -1
+                refs.append(st["refs"][k] if m and 0 <= k < len(st["refs"]) else ref)
+            se["refs"] = refs
+        extra.append(sh)
+    parsed["sheets"] = extra + parsed["sheets"]
+    parsed["warnings"] = notes + parsed.get("warnings", [])
+    return parsed
 
 
 def _calculate_missing_results(raw: list) -> dict[str, dict[tuple[int, int], Any]]:
@@ -298,11 +325,12 @@ def _calculate_missing_results(raw: list) -> dict[str, dict[tuple[int, int], Any
     return out
 
 
-def parse_xls(data: bytes) -> dict:
+def parse_xls(data: bytes, name: str = "") -> dict:
     import xlrd  # optional dependency, listed in pyproject
 
     book = xlrd.open_workbook(file_contents=data, on_demand=True)
     sheets = []
+    raw_grids: list[tuple[str, list[list[Any]]]] = []
     for sh in book.sheets():
         rows = min(sh.nrows, MAX_ROWS)
         grid = []
@@ -320,7 +348,8 @@ def parse_xls(data: bytes) -> dict:
         s = analyse_grid(sh.name, grid, excel=True, truncated=sh.nrows > MAX_ROWS or sh.ncols > MAX_COLS)
         s["warnings"].append("Legacy .xls: formulas are not available, only stored values.")
         sheets.append(s)
-    return {"kind": "tabular", "sheets": sheets}
+        raw_grids.append((sh.name, grid))
+    return _with_t_accounts({"kind": "tabular", "sheets": sheets}, raw_grids, name)
 
 
 def decode_text(data: bytes) -> tuple[str, str | None]:
@@ -334,7 +363,7 @@ def decode_text(data: bytes) -> tuple[str, str | None]:
     return data.decode("latin-1"), "File is not valid UTF-8; decoded as Latin-1. Some characters may be wrong."
 
 
-def parse_delimited(data: bytes, delimiter: str | None = None) -> dict:
+def parse_delimited(data: bytes, delimiter: str | None = None, name: str = "") -> dict:
     text, warn = decode_text(data)
     if delimiter is None:
         try:
@@ -352,4 +381,4 @@ def parse_delimited(data: bytes, delimiter: str | None = None) -> dict:
     if warn:
         sheet["warnings"].append(warn)
     sheet["delimiter"] = {"\t": "tab"}.get(delimiter, delimiter)
-    return {"kind": "tabular", "sheets": [sheet]}
+    return _with_t_accounts({"kind": "tabular", "sheets": [sheet]}, [("Data", grid)], name)

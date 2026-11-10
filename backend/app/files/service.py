@@ -43,9 +43,9 @@ def _parse(name: str, ext: str, category: str, label: str, data: bytes, settings
     if ext in (".xlsx", ".xlsm", ".docx"):
         archive.check_zip_container(data, 10_000, max_unc)
     if category == "spreadsheet":
-        return tabular.parse_xls(data) if ext == ".xls" else tabular.parse_xlsx(data)
+        return tabular.parse_xls(data, name) if ext == ".xls" else tabular.parse_xlsx(data, name)
     if category == "table":
-        return tabular.parse_delimited(data, "\t" if ext == ".tsv" else None)
+        return tabular.parse_delimited(data, "\t" if ext == ".tsv" else None, name)
     if category == "pdf":
         return documents.parse_pdf(data)
     if category == "word":

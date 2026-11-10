@@ -30,7 +30,7 @@ from .db.session import session_factory
 from .files.service import purge_expired
 from .finance import FinanceInputError
 
-VERSION = "0.14.4"
+VERSION = "0.14.5"
 log = logging.getLogger("fis")
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 # The built website has no inline scripts; inline styles are needed by the chart library.

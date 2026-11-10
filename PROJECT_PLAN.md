@@ -2,7 +2,7 @@
 
 This file is the source of truth for progress. Update it at the end of every working session so development can resume reliably.
 
-_Last updated: 2026-11-03 (v0.14.4 — test-data pack; single-year statements)_
+_Last updated: 2026-11-10 (v0.14.5 — two-sided (To / By) accounts)_
 
 ## Environment found at the start
 
@@ -23,6 +23,15 @@ _Last updated: 2026-11-03 (v0.14.4 — test-data pack; single-year statements)_
 | 6. AI & reports | AI assistant ✅ (Claude Opus 5.5, 15 engine tools, consent per question), Excel (live formulas) / Word / PDF report packs ✅ | ✅ Done |
 | 7. Persistence & security | Accounts (scrypt, server-side sessions, CSRF/origin check, rate limits), PostgreSQL + Alembic, projects, saved models with versions, history, per-user isolation, retention purge, export and deletion | ✅ Done |
 | 8. Final QA | Full accessibility audit, performance, deployment hardening | ⏳ Ongoing per phase |
+
+## Two-sided (To / By) accounts (v0.14.5)
+
+A real accountant's workbook (Trading & P&L and balance sheets in the Indian two-sided format, several clients on one sheet) gave no results: the app only read top-to-bottom statements with years across. New `app/files/taccounts.py`:
+- Finds each account by its heading row (PARTICULARS / Amount / PARTICULARS / Amount, EXPENDITURE / INCOME, LIABILITIES / ASSETS), reads both sides with their To / By markers, and keeps sub-lines under their heading (Sales → Gold, Silver). Columns right of the second Amount column (rough working) are ignored; #REF! cells are skipped.
+- Rewrites each account as a one-period statement for the existing engines. Totals they need are worked out and show the cells they add up: revenue, cost of goods sold (opening stock + purchases + direct expenses − closing stock), operating expenses, total equity, current liabilities, debt, fixed assets, inventories, cash, current assets. They are checked against the file's own totals; differences are reported, never forced.
+- The year comes from the title ("for the year ended 31/03/2025" → FY2024-25). Capital accounts and tax computations are skipped.
+- Several businesses on one sheet are told apart by the name lines above each account and never mixed: the one matching the file name is used, the others are listed by name.
+- Works for .xlsx, .xls and CSV. Tests: `tests/test_two_sided_accounts.py` (fictional workbook, hand-worked values).
 
 ## Test-data pack (v0.14.4)
 
